@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite+aiosqlite:///{project_root / 'data' / 'rl_lab.db'}"
 
     # MLflow
-    mlflow_tracking_uri: str = f"file:///{project_root / 'data' / 'mlruns'}"
+    mlflow_tracking_uri: str = f"sqlite:///{project_root / 'data' / 'mlflow.db'}"
 
     # Server
     host: str = "0.0.0.0"

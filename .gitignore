@@ -52,6 +52,13 @@ tb/
 videos/
 runs/
 
+# Data (runtime artifacts)
+data/*.db
+data/checkpoints/
+data/videos/
+data/tb/
+data/mlruns/
+
 # Optuna
 optuna_study.db
 optuna-journal.log

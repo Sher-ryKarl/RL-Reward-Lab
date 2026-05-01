@@ -158,7 +158,10 @@ async def _execute_experiment(exp_id: str) -> None:
                 await schedule_run(run_model, exp, queue)
                 run_model.status = "done"
                 run_model.ended_at = datetime.now(timezone.utc)
-            except Exception:
+            except Exception as exc:
+                import traceback
+                print(f"[ERROR] Run {run_model.id} failed: {exc}")
+                traceback.print_exc()
                 run_model.status = "failed"
                 run_model.ended_at = datetime.now(timezone.utc)
             finally:

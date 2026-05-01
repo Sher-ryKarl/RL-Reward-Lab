@@ -14,7 +14,7 @@ export function subscribeRunStream(
   onStatus?: StatusHandler,
 ): AbortController {
   const controller = new AbortController();
-  const url = `http://localhost:8000/api/v1/runs/${runId}/stream`;
+  const url = `/api/v1/runs/${runId}/stream`;
 
   // Small delay so the caller can set up UI state
   setTimeout(() => {

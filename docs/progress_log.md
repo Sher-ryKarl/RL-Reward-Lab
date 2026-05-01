@@ -4,15 +4,16 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | Phase 2 (v0.1.0-alpha.2) 已完成：后端收尾 + 前端项目骨架 |
-| 最后 Tag | `v0.1.0-alpha.2` |
+| 当前阶段 | Phase 3 (v0.1.0-alpha.3) 已完成：前后端联调 + 端到端验证 |
+| 最后 Tag | `v0.1.0-alpha.3` |
 | 当前分支 | develop |
-| 最后提交 | `354f53c` → 即将提交 Phase 2 |
+| 最后提交 | `87f1f79` → 即将提交 Phase 3 |
 
 ### 待解决问题
 
-1. 前端项目骨架待搭建（Phase 2）
-2. MLflow 集成端到端验证（Phase 2）
+1. 前端 ECharts 实机数据渲染验证（需浏览器手测）
+2. 前端回放页视频加载（依赖 MLflow artifact 路由）
+3. RND 内在奖励在实机上的调参数值（β 系数）需要实验校准
 3. Docker 方案待 v0.4
 
 ### 恢复上下文需读取的文件
@@ -85,4 +86,28 @@
 - npm 对等依赖警告较多（React 19 + 部分库），使用 `--legacy-peer-deps` 绕过。v0.1 不影响功能。
 
 **下一步计划**: 提交审查报告，等待批准后进入 Phase 3（前后端联调 + ECharts 实机数据验证）
+
+---
+
+### 2026-05-01 — Phase 3: 前后端联调 + 端到端验证 (v0.1.0-alpha.3)
+
+**完成工作**:
+- 前端代理配置：Vite proxy `/api` → `localhost:8000`，移除所有硬编码 URL
+- 修复 `run_one.py` 导入错误：`REWARD_REGISTRY` 从 `app.rewards.variants` 导入（正确）而非 `app.rewards.base`（错误）
+- 修复 Windows `multiprocessing.Queue` 跨进程问题：改用 `Manager().Queue()`（spawn 模式下可序列化）
+- 修复 MLflow tracking URI：由 `file:///` 切换为 `sqlite:///`（MLflow 3.x file store 已废弃）
+- 修复 PPO device：显式传 `device='cpu'` 消除 GPU 警告
+- 修复确定性算法警告：仅 CPU 可用时启用 `torch.use_deterministic_algorithms`
+- 端到端测试通过：创建实验 → 调度 → 子进程训练 → Manager Queue 桥接 → SSE 就绪 → 状态写入 DB
+  - 2 轮完整训练：MountainCar-v0 + R1_dense（2000 steps）/ R2_pbrs_potential（5000 steps）
+  - 状态流转：pending → running → done ✓
+  - MLflow experiment/run 自动记录 ✓
+- SSE 端点连接验证：EventSourceResponse 正常响应
+
+**遇到的问题**:
+- **Windows multiprocessing Queue 跨进程序列化失败** — `RuntimeError: Queue objects should only be shared between processes through inheritance`。根因：Windows 使用 `spawn` 而非 `fork`，`mp.Queue()` 不可序列化。解决：改用 `mp.Manager().Queue()`。这是 `技术栈选型.md` 避坑 #4 的延伸——在 Windows 上子进程通信需要额外的序列化考量。
+- **uvicorn 端口占用残留** — 多次测试需手动 `taskkill`。建议后续添加 `lifespan` shutdown hook 清理。
+
+**下一步计划**: 提交审查报告，等待批准后进入 Phase 4（v0.1.0 发布：联调收尾 + 文档补全 + 一键启动脚本完善）
+
 

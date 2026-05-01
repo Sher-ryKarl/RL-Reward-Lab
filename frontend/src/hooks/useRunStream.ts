@@ -50,7 +50,7 @@ export function useRunMetrics(runId: string | null) {
 
   useEffect(() => {
     if (!runId) return;
-    fetch(`http://localhost:8000/api/v1/runs/${runId}`)
+    fetch(`/api/v1/runs/${runId}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.final_metrics) {

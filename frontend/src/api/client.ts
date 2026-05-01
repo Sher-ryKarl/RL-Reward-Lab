@@ -3,10 +3,8 @@
  * Types are inferred from usage until openapi-typescript generation is wired.
  */
 
-const BASE = "http://localhost:8000";
-
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, {
+  const res = await fetch(url, {
     headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
   });
@@ -121,5 +119,5 @@ export const api = {
     request<{ status: string }>(`/api/v1/runs/${id}`, { method: "DELETE" }),
 
   // SSE stream — handled separately in stream.ts
-  streamUrl: (runId: string) => `${BASE}/api/v1/runs/${runId}/stream`,
+  streamUrl: (runId: string) => `/api/v1/runs/${runId}/stream`,
 };

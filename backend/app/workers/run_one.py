@@ -18,7 +18,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecVideoRecorder
 from app.config import settings
-from app.rewards.base import REWARD_REGISTRY
+from app.rewards.variants import REWARD_REGISTRY
 from app.rewards.rnd import RNDCallback
 from app.workers.callbacks import StreamCallback
 
@@ -45,7 +45,8 @@ def run_one(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.use_deterministic_algorithms(True, warn_only=True)
+    if not torch.cuda.is_available():
+        torch.use_deterministic_algorithms(True)
 
     vec = DummyVecEnv([make_env])
 
@@ -64,6 +65,7 @@ def run_one(
         model = PPO(
             "MlpPolicy",
             vec,
+            device=settings.device,
             tensorboard_log=str(settings.data_dir / "tb" / run_id),
             seed=seed,
             **hp,
