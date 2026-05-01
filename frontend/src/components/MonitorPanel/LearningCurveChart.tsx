@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 
 interface SeriesEntry {
@@ -11,12 +12,16 @@ interface Props {
 
 const COLORS = ["#94a3b8", "#3b82f6", "#22c55e", "#a855f7", "#ef4444"];
 
-export function LearningCurveChart({ seriesMap }: Props) {
-  const names = Array.from(seriesMap.keys());
-  const colorMap: Record<string, string> = {};
-  names.forEach((n, i) => (colorMap[n] = COLORS[i % COLORS.length]));
+export const LearningCurveChart = memo(function LearningCurveChart({ seriesMap }: Props) {
+  const names = useMemo(() => Array.from(seriesMap.keys()), [seriesMap]);
+  const colorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    names.forEach((n, i) => (map[n] = COLORS[i % COLORS.length]));
+    return map;
+  }, [names]);
 
-  const option = {
+  const option = useMemo(() => ({
+    animation: false,
     title: { text: "Learning Curve (ep_rew_mean)", left: "center", textStyle: { fontSize: 14 } },
     tooltip: { trigger: "axis" as const },
     legend: { data: names, bottom: 0 },
@@ -35,7 +40,7 @@ export function LearningCurveChart({ seriesMap }: Props) {
         symbol: "none" as const,
       };
     }),
-  };
+  }), [names, seriesMap, colorMap]);
 
-  return <ReactECharts option={option} style={{ height: 400 }} />;
-}
+  return <ReactECharts option={option} style={{ height: 400 }} notMerge={true} />;
+});

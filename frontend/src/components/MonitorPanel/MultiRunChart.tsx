@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, memo, useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import { useRunStream } from "../../hooks/useRunStream";
 
@@ -12,13 +12,17 @@ const COLORS = [
   "#06b6d4", "#ec4899", "#84cc16",
 ];
 
-export function MultiRunChart({ runIds, labels }: Props) {
-  // We need multiple SSE streams — use a map of runId → series data
+export const MultiRunChart = memo(function MultiRunChart({ runIds, labels }: Props) {
   const [seriesData, setSeriesData] = useState<
     Record<string, { step: number[]; ep_rew_mean: number[] }>
   >({});
 
-  const instanceRef = useRef<any>(null);
+  const displayNames = useMemo(() => labels || runIds, [labels, runIds]);
+
+  const option = useMemo(
+    () => _buildOption(runIds, displayNames, seriesData),
+    [runIds, displayNames, seriesData],
+  );
 
   return (
     <div className="border rounded p-4">
@@ -35,13 +39,13 @@ export function MultiRunChart({ runIds, labels }: Props) {
         />
       ))}
       <ReactECharts
-        ref={instanceRef}
-        option={buildOption(runIds, labels || runIds, seriesData)}
+        option={option}
         style={{ height: 400 }}
+        notMerge={true}
       />
     </div>
   );
-}
+});
 
 /** Hidden component that subscribes to one run's SSE stream and reports data upward. */
 function SingleRunListener({
@@ -59,12 +63,13 @@ function SingleRunListener({
   return null;
 }
 
-function buildOption(
+function _buildOption(
   runIds: string[],
   displayNames: string[],
   data: Record<string, { step: number[]; ep_rew_mean: number[] }>
 ) {
   return {
+    animation: false,
     title: {
       text: "Learning Curves (ep_rew_mean)",
       left: "center",

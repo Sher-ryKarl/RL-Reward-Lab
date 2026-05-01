@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import type { TrialResult, TrialScore } from "../../api/client";
 
@@ -28,7 +29,7 @@ function rewardName(rid: string): string {
   return short[rid] || rid.substring(0, 8);
 }
 
-export function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial, scores: _scores }: Props) {
+export const ParetoChart = memo(function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial, scores: _scores }: Props) {
   if (nObjectives < 2 || trials.length === 0) {
     return (
       <div className="border rounded p-4">
@@ -40,111 +41,114 @@ export function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial
     );
   }
 
-  const paretoSet = new Set(paretoFront.map((t) => t.number));
-  const rewardIds = [...new Set(trials.map((t) => t.reward_id))];
+  const paretoSet = useMemo(
+    () => new Set(paretoFront.map((t) => t.number)),
+    [paretoFront],
+  );
 
-  // Legend-separated series per reward_id, with Pareto points highlighted
-  const seriesByReward: Record<string, { all: number[][]; pareto: number[][] }> = {};
-  for (const rid of rewardIds) {
-    seriesByReward[rid] = { all: [], pareto: [] };
-  }
-  for (const t of trials) {
-    if (t.values.length < 2) continue;
-    const pt = [t.values[1], t.values[0]]; // X=wall_time, Y=ep_rew_mean
-    seriesByReward[t.reward_id].all.push(pt);
-    if (paretoSet.has(t.number)) {
-      seriesByReward[t.reward_id].pareto.push(pt);
+  const option = useMemo(() => {
+    const rewardIds = [...new Set(trials.map((t) => t.reward_id))];
+
+    const seriesByReward: Record<string, { all: number[][]; pareto: number[][] }> = {};
+    for (const rid of rewardIds) {
+      seriesByReward[rid] = { all: [], pareto: [] };
     }
-  }
+    for (const t of trials) {
+      if (t.values.length < 2) continue;
+      const pt = [t.values[1], t.values[0]]; // X=wall_time, Y=ep_rew_mean
+      seriesByReward[t.reward_id].all.push(pt);
+      if (paretoSet.has(t.number)) {
+        seriesByReward[t.reward_id].pareto.push(pt);
+      }
+    }
 
-  const scatterSeries = rewardIds.flatMap((rid) => {
-    const { all, pareto } = seriesByReward[rid];
-    const color = rewardColor(rid);
-    const name = rewardName(rid);
-    const items: any[] = [];
-    if (all.length > 0) {
-      items.push({
-        name: `${name} (all)`,
+    const scatterSeries = rewardIds.flatMap((rid) => {
+      const { all, pareto } = seriesByReward[rid];
+      const color = rewardColor(rid);
+      const name = rewardName(rid);
+      const items: any[] = [];
+      if (all.length > 0) {
+        items.push({
+          name: `${name} (all)`,
+          type: "scatter",
+          data: all,
+          symbolSize: 8,
+          itemStyle: { color, opacity: 0.35 },
+          legendHoverLink: false,
+          silent: true,
+        });
+      }
+      if (pareto.length > 0) {
+        items.push({
+          name: `${name} (Pareto)`,
+          type: "scatter",
+          data: pareto,
+          symbolSize: 14,
+          itemStyle: { color, borderColor: "#333", borderWidth: 1.5 },
+          emphasis: { scale: 1.5 },
+        });
+      }
+      return items;
+    });
+
+    if (highlightedTrial && highlightedTrial.values.length >= 2) {
+      scatterSeries.push({
+        name: "★ Recommended",
         type: "scatter",
-        data: all,
-        symbolSize: 8,
-        itemStyle: { color, opacity: 0.35 },
-        legendHoverLink: false,
+        data: [[highlightedTrial.values[1], highlightedTrial.values[0]]],
+        symbolSize: 22,
+        symbol: "diamond",
+        itemStyle: { color: "#f59e0b", borderColor: "#92400e", borderWidth: 2 },
+        emphasis: { scale: 1.3 },
+        zlevel: 10,
+      });
+    }
+
+    const paretoLine = paretoFront
+      .filter((t) => t.values.length >= 2)
+      .sort((a, b) => b.values[0] - a.values[0])
+      .map((t) => [t.values[1], t.values[0]]);
+
+    if (paretoLine.length >= 2) {
+      scatterSeries.push({
+        name: "Pareto front",
+        type: "line",
+        data: paretoLine,
+        smooth: false,
+        lineStyle: { color: "#999", type: "dashed", width: 1 },
+        symbol: "none",
         silent: true,
       });
     }
-    if (pareto.length > 0) {
-      items.push({
-        name: `${name} (Pareto)`,
-        type: "scatter",
-        data: pareto,
-        symbolSize: 14,
-        itemStyle: { color, borderColor: "#333", borderWidth: 1.5 },
-        emphasis: { scale: 1.5 },
-      });
-    }
-    return items;
-  });
 
-  // Highlighted / recommended trial
-  if (highlightedTrial && highlightedTrial.values.length >= 2) {
-    scatterSeries.push({
-      name: "★ Recommended",
-      type: "scatter",
-      data: [[highlightedTrial.values[1], highlightedTrial.values[0]]],
-      symbolSize: 22,
-      symbol: "diamond",
-      itemStyle: { color: "#f59e0b", borderColor: "#92400e", borderWidth: 2 },
-      emphasis: { scale: 1.3 },
-      zlevel: 10,
-    });
-  }
-
-  // Pareto front connecting line (sorted by O1 descending)
-  const paretoLine = paretoFront
-    .filter((t) => t.values.length >= 2)
-    .sort((a, b) => b.values[0] - a.values[0])
-    .map((t) => [t.values[1], t.values[0]]);
-
-  if (paretoLine.length >= 2) {
-    scatterSeries.push({
-      name: "Pareto front",
-      type: "line",
-      data: paretoLine,
-      smooth: false,
-      lineStyle: { color: "#999", type: "dashed", width: 1 },
-      symbol: "none",
-      silent: true,
-    });
-  }
-
-  const option = {
-    title: {
-      text: "Pareto Frontier — Reward vs Speed",
-      textStyle: { fontSize: 12, fontWeight: "normal" },
-    },
-    tooltip: {
-      trigger: "item",
-      formatter: (p: any) => {
-        const d = p.data;
-        return `Reward: ${d[1]?.toFixed(1)}<br/>Wall time: ${d[0]?.toFixed(1)}s`;
+    return {
+      title: {
+        text: "Pareto Frontier — Reward vs Speed",
+        textStyle: { fontSize: 12, fontWeight: "normal" },
       },
-    },
-    legend: {
-      type: "scroll",
-      bottom: 0,
-      textStyle: { fontSize: 10 },
-    },
-    xAxis: { name: "Wall time (s)", nameLocation: "center", nameGap: 30 },
-    yAxis: { name: "Episode Reward", nameLocation: "center", nameGap: 40 },
-    grid: { left: 60, right: 20, top: 40, bottom: 60 },
-    series: scatterSeries,
-  };
+      tooltip: {
+        trigger: "item",
+        formatter: (p: any) => {
+          const d = p.data;
+          return `Reward: ${d[1]?.toFixed(1)}<br/>Wall time: ${d[0]?.toFixed(1)}s`;
+        },
+      },
+      legend: {
+        type: "scroll",
+        bottom: 0,
+        textStyle: { fontSize: 10 },
+      },
+      xAxis: { name: "Wall time (s)", nameLocation: "center", nameGap: 30 },
+      yAxis: { name: "Episode Reward", nameLocation: "center", nameGap: 40 },
+      grid: { left: 60, right: 20, top: 40, bottom: 60 },
+      series: scatterSeries,
+    };
+  }, [trials, paretoFront, paretoSet, highlightedTrial]);
 
-  // Second view: convergence_steps vs ep_rew_mean (only if 3 objectives)
-  const hasConvergence = nObjectives >= 3 && trials.some((t) => t.values.length >= 3);
-  let option2: any = null;
-  if (hasConvergence) {
+  const option2 = useMemo(() => {
+    if (nObjectives < 3) return null;
+    if (!trials.some((t) => t.values.length >= 3)) return null;
+
     const convData = trials
       .filter((t) => t.values.length >= 3)
       .map((t) => ({
@@ -153,7 +157,7 @@ export function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial
         isPareto: paretoSet.has(t.number),
       }));
 
-    option2 = {
+    return {
       title: {
         text: "Pareto Frontier — Reward vs Convergence",
         textStyle: { fontSize: 12, fontWeight: "normal" },
@@ -183,7 +187,7 @@ export function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial
         },
       },
     };
-  }
+  }, [trials, paretoSet, nObjectives]);
 
   return (
     <div className="border rounded p-4 space-y-4">
@@ -196,4 +200,4 @@ export function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial
       </p>
     </div>
   );
-}
+});

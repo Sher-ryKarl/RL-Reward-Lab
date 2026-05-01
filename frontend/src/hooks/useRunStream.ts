@@ -7,6 +7,20 @@ interface SeriesData {
   ep_rew_mean: number[];
 }
 
+const MAX_POINTS = 500;
+const THROTTLE_MS = 250;
+
+function _downsample(step: number[], values: number[]): { step: number[]; values: number[] } {
+  const factor = 2;
+  const newStep: number[] = [];
+  const newValues: number[] = [];
+  for (let i = 0; i < step.length; i += factor) {
+    newStep.push(step[i]);
+    newValues.push(values[i]);
+  }
+  return { step: newStep, values: newValues };
+}
+
 export function useRunStream(runId: string | null) {
   const [connected, setConnected] = useState(false);
   const [latest, setLatest] = useState<MetricEvent | null>(null);
@@ -14,12 +28,21 @@ export function useRunStream(runId: string | null) {
   const [seriesMap, setSeriesMap] = useState<Map<string, SeriesData>>(
     new Map(),
   );
+  const lastFlushRef = useRef<number>(0);
+  const pendingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!runId) return;
     seriesRef.current.clear();
     setSeriesMap(new Map());
     setLatest(null);
+    lastFlushRef.current = 0;
+    pendingRef.current = false;
+
+    const _flush = () => {
+      pendingRef.current = false;
+      setSeriesMap(new Map(seriesRef.current));
+    };
 
     const ctrl = subscribeRunStream(
       runId,
@@ -32,13 +55,34 @@ export function useRunStream(runId: string | null) {
         };
         s.step.push(event.step);
         s.ep_rew_mean.push(event.metrics.ep_rew_mean ?? 0);
+
+        // Downsample when exceeding threshold (keep every 2nd point)
+        if (s.step.length > MAX_POINTS * 2) {
+          const ds = _downsample(s.step, s.ep_rew_mean);
+          s.step = ds.step;
+          s.ep_rew_mean = ds.values;
+        }
+
         seriesRef.current.set(rid, s);
-        setSeriesMap(new Map(seriesRef.current));
+
+        const now = performance.now();
+        if (now - lastFlushRef.current >= THROTTLE_MS) {
+          lastFlushRef.current = now;
+          pendingRef.current = false;
+          setSeriesMap(new Map(seriesRef.current));
+        } else {
+          pendingRef.current = true;
+        }
       },
       setConnected,
     );
 
-    return () => ctrl.abort();
+    return () => {
+      ctrl.abort();
+      if (pendingRef.current) {
+        _flush();
+      }
+    };
   }, [runId]);
 
   return { connected, latest, seriesMap };

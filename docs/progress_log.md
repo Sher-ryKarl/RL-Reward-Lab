@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v1.3.0-alpha.1 速率限制中间件 |
-| 最后 Tag | `v1.3.0-alpha.1` |
+| 当前阶段 | v1.3.0-alpha.2 前端性能优化 |
+| 最后 Tag | `v1.3.0-alpha.2` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -614,3 +614,35 @@
 **遇到的问题**: 无（实现直接，无意外复杂度）
 
 **下一步计划**: v1.3.0-alpha.2 前端性能优化（ECharts 懒加载、虚拟化、降采样）
+
+---
+
+### 2026-05-01 — Phase 18: v1.3.0-alpha.2 前端性能优化
+
+**完成工作**:
+- `frontend/src/hooks/useRunStream.ts` — 核心优化：
+  - 降采样：数据点超过 1000（MAX_POINTS × 2）时取每第 2 点，保持 ≤ 500 点上限，防止无界内存增长
+  - 节流：`setSeriesMap` 调用限频至 250ms（4fps），`seriesRef` 实时累积不丢数据
+  - 清理时 flush：流结束时立即推送最终批次，确保图表完整
+- `frontend/src/components/MonitorPanel/LearningCurveChart.tsx` — `React.memo` + `useMemo`（option / names / colorMap）+ `notMerge` + `animation: false`
+- `frontend/src/components/MonitorPanel/MultiRunChart.tsx` — `React.memo` + `useMemo`（option / displayNames）+ `notMerge` + `animation: false`，移除未使用的 `useRef`
+- `frontend/src/components/MonitorPanel/ParetoChart.tsx` — `React.memo` + `useMemo`（option / option2 / paretoSet），消除每次渲染的散点序列重建
+- 前端 TypeScript 零错误，Vite production build 通过（905ms）
+- 后端 47/47 测试全部通过（无后端变更）
+
+**设计决策**:
+- 降采样用 uniform binning（每 2 取 1）而非 LTTB：视觉足够，实现简单，RT 训练场景 O(n) 足够
+- 节流阈值 250ms：4fps 对训练监控足够流畅，且有效削减 10+fps 的渲染压力
+- `notMerge` + `animation: false`：流式更新场景下无需动画和合并，直接替换 option 更高效
+- `React.memo` 仅包裹图表组件：粒度控制在重渲染热点，不过度记忆化
+
+**遇到的问题**:
+- `ParetoChart` 改为 `memo(function ...)` 后遗漏闭包结尾 `});`，导致 TS1005 编译错误。补上即可。
+- `MultiRunChart` 移除 `instanceRef` 后遗留 `useRef` 导入，触发 TS6133。移除即可。
+
+**端到端验证结果**:
+- TypeScript 零错误 ✓
+- Vite production build 通过 ✓
+- 后端 47/47 测试全通过 ✓
+
+**下一步计划**: v1.3.0-alpha.3 多用户支持（User 表、注册、实验归属、权限）
