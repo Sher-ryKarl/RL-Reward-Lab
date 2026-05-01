@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, type ExperimentSummary, type OptimizationResult } from "../api/client";
 import { MonitorPanel } from "../components/MonitorPanel/MonitorPanel";
+import { MultiRunChart } from "../components/MonitorPanel/MultiRunChart";
 import { ReplayViewer } from "../components/ReplayViewer/ReplayViewer";
 import { OptimizationCharts } from "../components/MonitorPanel/OptimizationCharts";
 
@@ -12,6 +13,7 @@ export function ExperimentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -74,13 +76,13 @@ export function ExperimentDetailPage() {
       </div>
 
       {/* Run selector */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {exp.runs.map((run) => (
           <button
             key={run.id}
-            onClick={() => setActiveRun(run.id)}
+            onClick={() => { setActiveRun(run.id); setCompareMode(false); }}
             className={`px-3 py-1.5 rounded text-sm font-medium border transition ${
-              activeRun === run.id
+              activeRun === run.id && !compareMode
                 ? "border-indigo-500 bg-indigo-50 text-indigo-700"
                 : "border-gray-200 hover:border-gray-300"
             }`}
@@ -89,7 +91,27 @@ export function ExperimentDetailPage() {
             <span className={`ml-1.5 ${statusBadge(run.status)}`}>{run.status}</span>
           </button>
         ))}
+        {exp.runs.length > 1 && (
+          <button
+            onClick={() => { setCompareMode(!compareMode); setActiveRun(null); }}
+            className={`px-3 py-1.5 rounded text-sm font-medium border transition ${
+              compareMode
+                ? "border-green-500 bg-green-50 text-green-700"
+                : "border-gray-200 hover:border-gray-300"
+            }`}
+          >
+            Compare All ({exp.runs.length})
+          </button>
+        )}
       </div>
+
+      {/* Multi-run comparison chart (v0.6) */}
+      {compareMode && exp.runs.length > 1 && (
+        <MultiRunChart
+          runIds={exp.runs.map((r) => r.id)}
+          labels={exp.runs.map((r) => `${r.reward_id} (s${r.seed})`)}
+        />
+      )}
 
       {/* Optimization results (v0.2) */}
       {optResult && optResult.trials.length > 0 && (

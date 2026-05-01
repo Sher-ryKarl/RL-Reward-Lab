@@ -82,6 +82,6 @@ def test_monitor_inside_wrapper_order():
 
 
 def test_all_rewards_register():
-    assert len(REWARD_REGISTRY) == 5
+    assert len(REWARD_REGISTRY) >= 5
     for rid in ["R0_sparse", "R1_dense", "R2_pbrs_potential", "R3_curiosity_rnd", "R4_misleading"]:
         assert rid in REWARD_REGISTRY

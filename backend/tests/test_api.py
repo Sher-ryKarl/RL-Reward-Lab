@@ -11,6 +11,19 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_custom_rewards():
+    """Remove custom rewards added during a test."""
+    from app.core.reward_editor import list_custom, remove
+    from app.rewards.variants import REWARD_REGISTRY
+
+    yield
+    for entry in list_custom():
+        rid = entry["reward_id"]
+        remove(rid)
+        REWARD_REGISTRY.pop(rid, None)
+
+
 @pytest.fixture
 async def client() -> AsyncClient:
     transport = ASGITransport(app=app)
@@ -41,7 +54,7 @@ async def test_list_rewards(client: AsyncClient):
     r = await client.get("/api/v1/rewards")
     assert r.status_code == 200
     data = r.json()
-    assert len(data) == 5
+    assert len(data) >= 5
     ids = {rw["id"] for rw in data}
     assert "R0_sparse" in ids
     assert "R4_misleading" in ids
@@ -249,3 +262,93 @@ async def test_get_demo_nonexistent(client: AsyncClient):
 async def test_delete_demo_nonexistent(client: AsyncClient):
     r = await client.delete("/api/v1/demos/nonexistent")
     assert r.status_code == 404
+
+
+# ── Custom Reward tests (v0.6) ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_valid_custom_reward(client: AsyncClient):
+    code = (
+        "def reward_fn(obs, reward, terminated, truncated):\n"
+        "    return obs[0] + 0.5 * abs(obs[1])\n"
+    )
+    body = {"name": "Position+Velocity", "code": code}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.text}"
+    data = r.json()
+    assert data["reward_id"].startswith("C_")
+    assert "Position+Velocity" in data["name"]
+
+
+@pytest.mark.asyncio
+async def test_create_custom_reward_bad_syntax(client: AsyncClient):
+    body = {"name": "Bad", "code": "def reward_fn(): pass"}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_custom_reward_wrong_name(client: AsyncClient):
+    code = "def not_reward_fn(obs, reward, terminated, truncated):\n    return 1.0\n"
+    body = {"name": "Wrong Name", "code": code}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    assert r.status_code == 400
+    assert "reward_fn" in r.text
+
+
+@pytest.mark.asyncio
+async def test_create_custom_reward_disallowed_import(client: AsyncClient):
+    code = (
+        "def reward_fn(obs, reward, terminated, truncated):\n"
+        "    import os\n"
+        "    return 0.0\n"
+    )
+    body = {"name": "Bad Import", "code": code}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_custom_reward_disallowed_builtin(client: AsyncClient):
+    code = (
+        "def reward_fn(obs, reward, terminated, truncated):\n"
+        "    exec('print(1)')\n"
+        "    return 0.0\n"
+    )
+    body = {"name": "Bad Builtin", "code": code}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_custom_reward_in_list(client: AsyncClient):
+    code = (
+        "def reward_fn(obs, reward, terminated, truncated):\n"
+        "    return 1.0\n"
+    )
+    body = {"name": "AlwaysOne", "code": code}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    assert r.status_code == 201
+    rid = r.json()["reward_id"]
+
+    r2 = await client.get("/api/v1/rewards")
+    ids = {rw["id"] for rw in r2.json()}
+    assert rid in ids
+
+
+@pytest.mark.asyncio
+async def test_delete_custom_reward(client: AsyncClient):
+    code = (
+        "def reward_fn(obs, reward, terminated, truncated):\n"
+        "    return 2.0\n"
+    )
+    body = {"name": "ToDelete", "code": code}
+    r = await client.post("/api/v1/rewards/custom", json=body)
+    rid = r.json()["reward_id"]
+
+    r2 = await client.delete(f"/api/v1/rewards/custom/{rid}")
+    assert r2.status_code == 204
+
+    r3 = await client.delete(f"/api/v1/rewards/custom/{rid}")
+    assert r3.status_code == 404

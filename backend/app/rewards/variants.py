@@ -149,3 +149,23 @@ REWARD_REGISTRY: dict[str, RewardSpec] = {
 }
 
 REWARD_REGISTRY_V1 = REWARD_REGISTRY  # alias for future versioning
+
+
+def _load_custom_rewards_into_registry() -> None:
+    """Register persisted custom rewards in REWARD_REGISTRY.
+
+    Called at import time so that subprocess workers (Windows spawn mode) can
+    discover custom rewards created in the main process.
+    """
+    from app.core.reward_editor import list_custom
+    from app.rewards.custom_spec import CustomRewardSpec
+
+    for entry in list_custom():
+        rid = entry["reward_id"]
+        if rid not in REWARD_REGISTRY:
+            REWARD_REGISTRY[rid] = CustomRewardSpec(
+                rid, entry["name"], entry["code"]
+            )
+
+
+_load_custom_rewards_into_registry()

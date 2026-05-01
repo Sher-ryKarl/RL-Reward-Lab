@@ -4,6 +4,7 @@ import { EnvSelector } from "./EnvSelector";
 import { RewardMultiSelect } from "./RewardMultiSelect";
 import { HyperParamPanel } from "./HyperParamPanel";
 import { SearchSpaceEditor } from "./SearchSpaceEditor";
+import { RewardEditor } from "./RewardEditor";
 
 interface Props {
   envs: EnvInfo[];
@@ -11,7 +12,7 @@ interface Props {
   rewards: RewardInfo[];
 }
 
-export function ExperimentForm({ envs, algos, rewards }: Props) {
+export function ExperimentForm({ envs, algos, rewards: initialRewards }: Props) {
   const [envId, setEnvId] = useState("MountainCar-v0");
   const [algoId, setAlgoId] = useState("PPO");
   const [rewardIds, setRewardIds] = useState<string[]>(["R0_sparse", "R1_dense"]);
@@ -27,6 +28,8 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
   const [created, setCreated] = useState(false);
   const [demos, setDemos] = useState<DemoInfo[]>([]);
   const [demoId, setDemoId] = useState<string | null>(null);
+  const [rewards, setRewards] = useState<RewardInfo[]>(initialRewards);
+  const [editingReward, setEditingReward] = useState<RewardInfo | null | undefined>(undefined);
 
   // Reset hyperparams when algo changes
   useEffect(() => {
@@ -39,9 +42,19 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
     api.listDemos().then(setDemos).catch(() => setDemos([]));
   }, [envId]);
 
+  // Refresh rewards list to include any custom ones
+  useEffect(() => {
+    api.listRewards().then(setRewards).catch(() => {});
+  }, []);
+
   const selectedAlgo = algos.find((a) => a.algo_id === algoId);
   const isBC = algoId === "BC";
   const filteredDemos = demos.filter((d) => d.env_id === envId);
+
+  const handleRewardCreated = (reward: RewardInfo) => {
+    setRewards((prev) => [...prev, reward]);
+    setRewardIds((prev) => [...prev, reward.id]);
+  };
 
   const submit = async () => {
     if (rewardIds.length === 0) {
@@ -170,7 +183,12 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
         </fieldset>
       )}
 
-      <RewardMultiSelect rewards={rewards} selected={rewardIds} onChange={setRewardIds} />
+      <RewardMultiSelect
+        rewards={rewards}
+        selected={rewardIds}
+        onChange={setRewardIds}
+        onEdit={(r) => setEditingReward(r)}
+      />
       <HyperParamPanel hp={hp} onChange={setHp} algoId={algoId} />
 
       {/* ── Optimization Toggle (v0.2, not for BC) ──────────────────── */}
@@ -253,6 +271,14 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
       >
         {submitting ? "Submitting..." : "Start Experiment"}
       </button>
+
+      {editingReward !== undefined && (
+        <RewardEditor
+          editing={editingReward}
+          onClose={() => setEditingReward(undefined)}
+          onCreated={handleRewardCreated}
+        />
+      )}
     </div>
   );
 }

@@ -30,6 +30,7 @@ export interface RewardInfo {
   source_type: string;
   terms: string[];
   references: string[];
+  code?: string;
 }
 
 export interface AlgoInfo {
@@ -151,6 +152,16 @@ export const api = {
 
   cancelRun: (id: string) =>
     request<{ status: string }>(`/api/v1/runs/${id}`, { method: "DELETE" }),
+
+  // Custom Rewards (v0.6)
+  createCustomReward: (body: { name: string; code: string }) =>
+    request<{ reward_id: string; name: string; code: string }>(
+      "/api/v1/rewards/custom",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+
+  deleteCustomReward: (rewardId: string) =>
+    request<void>(`/api/v1/rewards/custom/${rewardId}`, { method: "DELETE" }),
 
   // Demos (v0.5)
   listDemos: () => request<DemoInfo[]>("/api/v1/demos"),

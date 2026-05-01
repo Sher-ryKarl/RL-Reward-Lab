@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.5.0 IRL/BC 开发中 |
-| 最后 Tag | `v0.5.0-alpha.1` |
+| 当前阶段 | v0.6.0 奖励函数编辑器 + 基线对比实验 |
+| 最后 Tag | `v0.6.0-alpha.1` |
 | 当前分支 | feature/multi-algo |
 | 最后提交 | — |
 
@@ -269,4 +269,45 @@
 
 **端到端验证结果**: `scripts/validate_bc.py` 全部通过 — PPO 训练 (9s) → Demo 收集 (5 eps, 1005 steps) → BC 训练 (1s, 100 batches) → BC 无 demo 正确拒绝
 
-**下一步计划**: v0.6 候选方向（按优先级）：Docker 部署 / 前端 Demo 管理页面 / 连续动作环境 (Pendulum) / 前端回放页视频加载
+**下一步计划**: v0.7 候选方向：Docker 部署 / 前端 Demo 管理页面 / 连续动作环境 (Pendulum) / 前端回放页视频加载
+
+
+---
+
+### 2026-05-01 — Phase 9: v0.6 奖励函数编辑器 + 基线对比实验
+
+**完成工作**:
+- `backend/app/core/reward_editor.py` — AST 白名单安全校验引擎：允许的 AST 节点类型（42 种）、允许的内置函数（24 个）、允许的导入（math/numpy/numpy.linalg）；函数签名固定为 `reward_fn(obs, reward, terminated, truncated)`；校验通过后 SHA256 哈希生成 `C_<hash>` ID，存入 in-memory registry + 磁盘 JSON 持久化
+- `backend/app/rewards/custom_wrapper.py` — `CustomRewardWrapper(gym.Wrapper)`：在 `step()` 中调用用户函数替换奖励，异常时回退原始奖励
+- `backend/app/rewards/custom_spec.py` — `CustomRewardSpec(RewardSpec)`：thin adapter，生成 wrapper
+- `backend/app/api/routes/rewards.py` — 新增 POST `/rewards/custom`、DELETE `/rewards/custom/{reward_id}`；list 合并内置 + 自定义
+- `backend/app/rewards/variants.py` — 新增 `_load_custom_rewards_into_registry()`，import 时从磁盘加载自定义奖励到 REWARD_REGISTRY（关键：Windows spawn 子进程可见性）
+- `backend/app/core/reward_editor.py` — 磁盘持久化（JSON 文件）：`_load_persisted()` / `_save_persisted()`，register/remove 时自动保存
+- `frontend/src/components/ExperimentForm/RewardEditor.tsx` — Monaco Editor 弹窗（Python 语法高亮）、内置预设复制提示、自定义/编辑双模式
+- `frontend/src/components/ExperimentForm/RewardMultiSelect.tsx` — "+ Custom Reward" 按钮、View Source/Edit 链接、自定义 badge 显示
+- `frontend/src/components/ExperimentForm/ExperimentForm.tsx` — 集成 RewardEditor modal、`editingReward` 状态管理、创建后自动选中
+- `frontend/src/components/MonitorPanel/MultiRunChart.tsx` — SSE 多跑对比叠加图：`SingleRunListener` 隐式组件独立订阅每条 run 的 SSE 流、8 色 ECharts 线图、dataZoom
+- `frontend/src/pages/ExperimentDetailPage.tsx` — "Compare All" 按钮（多跑时显示）、MultiRunChart 渲染（reward_id + seed label）
+- `frontend/src/api/client.ts` — 新增 `createCustomReward`/`deleteCustomReward` API、`RewardInfo.code` 字段
+- `backend/tests/test_api.py` — 新增 7 个测试：create valid custom / bad syntax / wrong name / disallowed import / disallowed builtin / custom in list / delete custom
+- 测试矩阵：37/37 全部通过（11 reward unit + 26 API integration）
+- 前端 TypeScript 零错误，Vite build 通过
+
+**设计决策**:
+- AST 白名单方式（非沙箱容器）：因为训练已在 ProcessPoolExecutor 子进程中运行，子进程边界提供额外安全隔离
+- `__builtins__` context bug 修复：在导入的模块中 `__builtins__` 可能为 dict，改用 `import builtins; set(dir(builtins))` 获取内置名称
+- 自定义奖励磁盘持久化：主进程写入 JSON 文件，子进程 `variants.py` import 时自动加载 → 解决 Windows spawn 模式下内存隔离问题
+- Monaco Editor 通过 `@monaco-editor/react` 动态加载（CDN），不打包到 bundle
+
+**遇到的问题**:
+- **自定义奖励子进程不可见（最耗时 bug）**：Windows spawn 模式下子进程获取全新的 Python 解释器，in-memory registry 为空 → `KeyError`。根因：默认只存在于 uvicorn 进程内存。修复：JSON 文件持久化 + `variants.py` import 时自动加载 `_load_custom_rewards_into_registry()`
+- `exec`/`eval`/`open` 等危险函数白名单验证在 `__builtins__` 为 dict 时失效（6+ 轮调试），使用 `builtins` 模块 `dir()` 解决
+
+**端到端验证结果**: 
+- API 创建自定义奖励 `reward + 10.0` ✓
+- AST 校验拒绝错误签名、非法导入 ✓
+- JSON 文件持久化 ✓
+- 使用自定义奖励创建实验 → Worker 子进程成功加载 → 训练完成（ep_rew_mean=1800，验证 200 步 × 9 = 1800 符合预期） ✓
+- 37/37 测试全部通过 ✓
+
+**下一步计划**: v0.7 候选方向：Docker 部署 / 前端 Demo 管理页面 / 连续动作环境 (Pendulum)
