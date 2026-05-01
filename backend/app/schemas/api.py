@@ -55,6 +55,14 @@ class TrialResult(BaseModel):
     number: int
     value: float
     params: dict
+    reward_id: str = ""
+
+
+class PerRewardResult(BaseModel):
+    best_value: float
+    best_params: dict
+    n_trials: int
+    trials: list[TrialResult] = Field(default_factory=list)
 
 
 class OptimizationResult(BaseModel):
@@ -64,6 +72,7 @@ class OptimizationResult(BaseModel):
     best_params: dict
     trials: list[TrialResult]
     status: str
+    per_reward: dict[str, PerRewardResult] = Field(default_factory=dict)
 
 
 class RunSummary(BaseModel):

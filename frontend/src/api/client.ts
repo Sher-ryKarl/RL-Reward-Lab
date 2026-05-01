@@ -70,6 +70,14 @@ export interface TrialResult {
   number: number;
   value: number;
   params: Record<string, unknown>;
+  reward_id: string;
+}
+
+export interface PerRewardResult {
+  best_value: number;
+  best_params: Record<string, unknown>;
+  n_trials: number;
+  trials: TrialResult[];
 }
 
 export interface OptimizationResult {
@@ -79,6 +87,7 @@ export interface OptimizationResult {
   best_params: Record<string, unknown>;
   trials: TrialResult[];
   status: string;
+  per_reward: Record<string, PerRewardResult>;
 }
 
 export interface RunSummary {

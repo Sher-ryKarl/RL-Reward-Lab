@@ -1,6 +1,8 @@
-"""Optuna-based hyperparameter optimization for v0.2.
+"""Optuna-based hyperparameter optimization for v0.2 / v0.9.
 
-Each trial = one training run. The study runs in-process via study.optimize().
+v0.9: Multi-reward search — each trial samples a reward_id from the user's
+selected list, enabling direct comparison of which reward function yields the
+best results under optimized hyperparameters.
 """
 
 from __future__ import annotations
@@ -33,12 +35,17 @@ def _objective(
     trial: optuna.Trial,
     env_id: str,
     algo_id: str,
-    reward_id: str,
+    reward_ids: list[str],
     total_steps: int,
     search_space: dict[str, dict],
     fixed_hp: dict[str, Any],
 ) -> float:
-    """Optuna objective: sample → train → return eval reward."""
+    """Optuna objective: sample reward_id + hyperparams → train → return eval reward.
+
+    v0.9: reward_id is treated as a categorical search dimension, allowing TPE
+    to learn which reward functions perform best under which hyperparameters.
+    """
+    reward_id = trial.suggest_categorical("reward_id", reward_ids)
     hp = _sample_params(trial, search_space, fixed_hp)
     hp = {**ALGO_REGISTRY[algo_id].default_hp, **hp}
 
@@ -117,10 +124,15 @@ async def run_sweep(
     total_steps: int,
     search_space: dict[str, dict],
     n_trials: int,
-    reward_id: str,
+    reward_ids: list[str],
     fixed_hp: dict[str, Any],
 ) -> None:
-    """Run an Optuna sweep in a background task. Updates Run models as trials complete."""
+    """Run a multi-reward Optuna sweep in a background task.
+
+    v0.9: Each trial samples a reward_id from reward_ids via suggest_categorical,
+    enabling direct comparison of reward function performance under optimized
+    hyperparameters. Trial results are grouped by reward_id.
+    """
     from app.db.database import async_session
 
     study_name = f"sweep-{exp_id}"
@@ -148,6 +160,7 @@ async def run_sweep(
                     "trial_number": trial_inner.number,
                     "value": trial_inner.value,
                     "params": trial_inner.params,
+                    "reward_id": trial_inner.params.get("reward_id", reward_ids[0]),
                 })
 
         study.optimize(
@@ -155,7 +168,7 @@ async def run_sweep(
                 trial,
                 env_id,
                 algo_id,
-                reward_id,
+                reward_ids,
                 total_steps,
                 search_space,
                 fixed_hp,
@@ -170,12 +183,24 @@ async def run_sweep(
     # Run in thread pool (Optuna's RDBStorage + sqlite3 is synchronous)
     trial_results = await loop.run_in_executor(None, _run_trials)
 
+    # Build per-reward summary
+    per_reward: dict[str, dict] = {}
+    for tr in trial_results:
+        rid = tr["reward_id"]
+        if rid not in per_reward:
+            per_reward[rid] = {"best_value": tr["value"], "best_params": tr["params"], "n_trials": 0}
+        else:
+            if tr["value"] > per_reward[rid]["best_value"]:
+                per_reward[rid]["best_value"] = tr["value"]
+                per_reward[rid]["best_params"] = tr["params"]
+        per_reward[rid]["n_trials"] += 1
+
     # Create Run records for each completed trial
     async with async_session() as db:
         for tr in trial_results:
             run = RunModel(
                 experiment_id=exp_id,
-                reward_id=reward_id,
+                reward_id=tr["reward_id"],
                 seed=tr["trial_number"],
                 hyperparams=tr["params"],
                 status="done",

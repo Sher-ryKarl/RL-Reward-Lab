@@ -76,13 +76,12 @@ async def create_experiment(
         )
         exp = result.scalar_one()
 
-        reward_id = body.reward_ids[0]
         background_tasks.add_task(
             _execute_optimization,
             exp.id,
             body.search_space,
             body.n_trials,
-            reward_id,
+            body.reward_ids,
             hp,
         )
         return _exp_to_summary(exp)
@@ -177,17 +176,30 @@ async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
     trials: list[TrialResult] = []
     best_value: float | None = None
     best_params: dict = {}
+    per_reward: dict[str, dict] = {}
     for run in exp.runs:
         value = run.final_metrics.get("ep_rew_mean") if run.final_metrics else None
+        reward_id = run.reward_id
         trial = TrialResult(
             number=run.seed,
             value=value or 0.0,
             params=run.hyperparams or {},
+            reward_id=reward_id,
         )
         trials.append(trial)
         if value is not None and (best_value is None or value > best_value):
             best_value = value
             best_params = run.hyperparams or {}
+
+        # Per-reward grouping
+        if reward_id not in per_reward:
+            per_reward[reward_id] = {"best_value": value or 0.0, "best_params": run.hyperparams or {}, "n_trials": 0, "trials": []}
+        entry = per_reward[reward_id]
+        if value is not None and value > entry["best_value"]:
+            entry["best_value"] = value
+            entry["best_params"] = run.hyperparams or {}
+        entry["n_trials"] += 1
+        entry["trials"].append(trial)
 
     return OptimizationResult(
         experiment_id=exp.id,
@@ -196,6 +208,7 @@ async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
         best_params=best_params,
         trials=trials,
         status=exp.status,
+        per_reward=per_reward,
     )
 
 
@@ -300,10 +313,10 @@ async def _execute_optimization(
     exp_id: str,
     search_space: dict,
     n_trials: int,
-    reward_id: str,
+    reward_ids: list[str],
     fixed_hp: dict,
 ) -> None:
-    """Background task: run Optuna HPO sweep. run_sweep handles Run records and status."""
+    """Background task: run multi-reward Optuna HPO sweep."""
     from app.db.database import async_session
 
     async with async_session() as db:
@@ -331,7 +344,7 @@ async def _execute_optimization(
                 total_steps=total_steps,
                 search_space=search_space,
                 n_trials=n_trials,
-                reward_id=reward_id,
+                reward_ids=reward_ids,
                 fixed_hp=fixed_hp,
             )
         except Exception as exc:
