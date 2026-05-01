@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |---|---|
 | 当前阶段 | v0.5.0 IRL/BC 开发中 |
-| 最后 Tag | `v0.4.0-alpha.1` |
+| 最后 Tag | `v0.5.0-alpha.1` |
 | 当前分支 | feature/multi-algo |
 | 最后提交 | — |
 
@@ -261,4 +261,12 @@
 
 **遇到的问题**: 无
 
-**下一步计划**: 端到端验证 BC 训练链路 → v0.6 其他功能（按优先级排序）
+**遇到的问题**:
+- `imitation.data.rollout.rollout()` 默认 `unwrap=True` 需要 imitation 特定的 info wrapper，使用 `unwrap=False` 解决
+- `bc.BC.__init__()` 需要 `rng` 参数（imitation 1.0.0）
+- `artifact_path` 未持久化到 DB 的预存在 bug：`schedule_run` 中 bridge task 被 cancel 导致最终消息丢失，改为 await 完成
+- `gym.vector.make` 与 imitation rollout 不兼容，改用 `DummyVecEnv`
+
+**端到端验证结果**: `scripts/validate_bc.py` 全部通过 — PPO 训练 (9s) → Demo 收集 (5 eps, 1005 steps) → BC 训练 (1s, 100 batches) → BC 无 demo 正确拒绝
+
+**下一步计划**: v0.6 候选方向（按优先级）：Docker 部署 / 前端 Demo 管理页面 / 连续动作环境 (Pendulum) / 前端回放页视频加载
