@@ -43,10 +43,11 @@ async def test_list_envs(client: AsyncClient):
     r = await client.get("/api/v1/envs")
     assert r.status_code == 200
     data = r.json()
-    assert len(data) == 4
+    assert len(data) == 5
     env_ids = {e["env_id"] for e in data}
     assert "MountainCar-v0" in env_ids
     assert "CartPole-v1" in env_ids
+    assert "Pendulum-v1" in env_ids
 
 
 @pytest.mark.asyncio
@@ -92,7 +93,7 @@ async def test_create_experiment(client: AsyncClient):
 async def test_create_validation_fails_on_bad_env(client: AsyncClient):
     body = {
         "name": "Bad Env",
-        "env_id": "Pendulum-v1",  # not in v0.1
+        "env_id": "NonExistentEnv-v0",  # not in registry
         "algo_id": "PPO",
         "reward_ids": ["R0_sparse"],
         "hyperparams": {},
@@ -203,15 +204,51 @@ async def test_create_dqn_experiment(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_sac_rejected_for_discrete_env(client: AsyncClient):
-    """SAC is continuous-only, should be rejected for discrete MountainCar."""
-    # The API itself accepts the POST (schema validation passes),
-    # but validation should happen before training. For now just verify
-    # it's in the valid algo_id list.
+async def test_algo_env_compatibility(client: AsyncClient):
+    """Verify continuous/discrete compatibility matrix."""
     from app.core.registry import algo_supports_env
+    # SAC is continuous-only
     assert algo_supports_env("SAC", "MountainCar-v0") is False
+    assert algo_supports_env("SAC", "Pendulum-v1") is True
+    # DQN is discrete-only
     assert algo_supports_env("DQN", "MountainCar-v0") is True
+    assert algo_supports_env("DQN", "Pendulum-v1") is False
+    # PPO works on both
     assert algo_supports_env("PPO", "MountainCar-v0") is True
+    assert algo_supports_env("PPO", "Pendulum-v1") is True
+
+
+@pytest.mark.asyncio
+async def test_create_sac_pendulum_experiment(client: AsyncClient):
+    """SAC should be accepted for continuous Pendulum-v1."""
+    body = {
+        "name": "SAC Pendulum",
+        "env_id": "Pendulum-v1",
+        "algo_id": "SAC",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {"learning_rate": 1e-4},
+        "total_steps": 300,
+        "seeds": [0],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 202, r.text
+
+
+@pytest.mark.asyncio
+async def test_create_dqn_rejected_for_continuous_env(client: AsyncClient):
+    """DQN is discrete-only, should be rejected for continuous Pendulum."""
+    body = {
+        "name": "DQN Pendulum (should fail)",
+        "env_id": "Pendulum-v1",
+        "algo_id": "DQN",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 300,
+        "seeds": [0],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 400
+    assert "does not support" in r.text
 
 
 # ── BC & Demo tests (v0.5) ────────────────────────────────────────────────────

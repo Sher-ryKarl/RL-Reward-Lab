@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 class ExperimentCreate(BaseModel):
     name: str = Field(default="Untitled")
-    env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1"] = "MountainCar-v0"
+    env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1", "Pendulum-v1"] = "MountainCar-v0"
     algo_id: Literal["PPO", "DQN", "SAC", "BC"] = "PPO"
     reward_ids: list[str] = Field(min_length=1, max_length=8)
     hyperparams: dict[str, Any] = Field(default_factory=dict)
@@ -30,7 +30,7 @@ class ExperimentCreate(BaseModel):
 
 class DemoCreate(BaseModel):
     name: str = Field(default="Untitled Demo")
-    env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1"] = "MountainCar-v0"
+    env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1", "Pendulum-v1"] = "MountainCar-v0"
     source_run_id: str | None = None
     n_episodes: int = Field(10, ge=1, le=100)
     min_timesteps: int = Field(10_000, ge=100, le=500_000)

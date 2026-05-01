@@ -50,6 +50,11 @@ ENV_REGISTRY: dict[str, EnvMeta] = {
         name="Acrobot",
         action_space="discrete",
     ),
+    "Pendulum-v1": EnvMeta(
+        env_id="Pendulum-v1",
+        name="Pendulum",
+        action_space="continuous",
+    ),
 }
 
 ALGO_REGISTRY: dict[str, AlgoMeta] = {

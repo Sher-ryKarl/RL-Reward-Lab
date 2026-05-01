@@ -1,4 +1,4 @@
-"""Reward variants — env-aware for MountainCar, CartPole, LunarLander, Acrobot.
+"""Reward variants — env-aware for MountainCar, CartPole, LunarLander, Acrobot, Pendulum.
 
 R0_sparse          – baseline, demonstrate "untrainable without shaping"
 R1_dense           – hand-crafted progress signal (varies per env)
@@ -29,6 +29,9 @@ def _progress_fn(env_id: str):
         return lambda obs, r, t, tr: float(
             -obs[0] - (obs[0] * obs[2] - obs[1] * obs[3])
         )
+    if env_id == "Pendulum-v1":
+        # cos(theta): -1 (down) → 1 (upright), the natural progress measure
+        return lambda obs, r, t, tr: float(obs[0])
     # MountainCar-v0 / CartPole-v1: position
     return lambda obs, r, t, tr: float(obs[0] + 1.2)
 
@@ -46,6 +49,12 @@ def _phi_fn(env_id: str):
             return float(-obs[0] - (obs[0] * obs[2] - obs[1] * obs[3]))
 
         return phi
+    if env_id == "Pendulum-v1":
+        # upright + angular stability: cos(theta) - 0.5 * theta_dot²
+        def phi(obs):
+            return float(obs[0] - 0.5 * obs[2] ** 2)
+
+        return phi
     # MountainCar-v0 / CartPole-v1: position + kinetic energy
     def phi(obs):
         return float(obs[0] + 0.5 * obs[1] ** 2)
@@ -61,6 +70,9 @@ def _misleading_fn(env_id: str):
     if env_id == "Acrobot-v1":
         # reward angular velocity magnitude → encourages spastic motion
         return lambda obs, r, t, tr: float(abs(obs[4]) + abs(obs[5]))
+    if env_id == "Pendulum-v1":
+        # reward |angular velocity| → encourages spinning, not balancing
+        return lambda obs, r, t, tr: float(abs(obs[2]))
     # MountainCar-v0 / CartPole-v1: reward |velocity|
     return lambda obs, r, t, tr: float(abs(obs[1]))
 
