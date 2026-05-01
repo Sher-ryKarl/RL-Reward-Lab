@@ -4,10 +4,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | Phase 1 (v0.1.0-alpha.1) 已完成：后端核心搭建 |
-| 最后 Tag | `v0.1.0-alpha.1` |
+| 当前阶段 | Phase 2 (v0.1.0-alpha.2) 已完成：后端收尾 + 前端项目骨架 |
+| 最后 Tag | `v0.1.0-alpha.2` |
 | 当前分支 | develop |
-| 最后提交 | `c4ae3ac` → 即将提交 Phase 1 |
+| 最后提交 | `354f53c` → 即将提交 Phase 2 |
 
 ### 待解决问题
 
@@ -57,3 +57,32 @@
 - Windows 终端 GBK 编码问题，通过 `PYTHONIOENCODING=utf-8` 解决
 
 **下一步计划**: 提交审查报告，等待批准后进入 Phase 2（MLflow 集成验证 + 前端项目骨架）
+
+---
+
+### 2026-05-01 — Phase 2: 后端收尾 + 前端启动 (v0.1.0-alpha.2)
+
+**完成工作**:
+- 创建 3 个 ADR 文档：tech stack (001)、v0.1 scope (002)、reward wrapper order (003)
+- 前端项目初始化：Vite + React 18 + TypeScript 5，npm 依赖安装
+- 前端依赖：react-router-dom、@tanstack/react-query、zustand、echarts、echarts-for-react、openapi-typescript
+- API 层：`api/client.ts`（REST 封装 + 全部 TS 类型定义）、`api/stream.ts`（SSE EventSource 封装 + 自动重连）
+- 状态管理：`stores/experimentStore.ts`（Zustand，实验列表 + 选中状态 + run 状态更新）
+- Hooks：`useRunStream`（SSE 实时订阅）、`useRunMetrics`（历史指标拉取）
+- 布局组件：`Navbar.tsx`（导航栏，路由高亮）、`MainLayout.tsx`（Outlet 布局）
+- 表单组件：`ExperimentForm/ExperimentForm.tsx`（完整实验创建表单）、`EnvSelector.tsx`、`RewardMultiSelect.tsx`（含 ⚠ 警告样式）、`HyperParamPanel.tsx`
+- 监控组件：`LearningCurveChart.tsx`（ECharts 实时曲线，5 色系）、`HealthCard.tsx`（PPO 健康度）、`MonitorPanel.tsx`（整合面板）
+- 对比/回放组件：`CompareView.tsx`、`ReplayViewer.tsx`
+- 页面：`ExperimentListPage.tsx`（5s 轮询 + 空状态引导）、`NewExperimentPage.tsx`、`ExperimentDetailPage.tsx`（Run 选择器 + MonitorPanel）
+- App.tsx：BrowserRouter + QueryClientProvider + 路由配置
+- 模板清理：删除 Vite 默认 assets，简化 index.css
+- Tailwind CSS CDN（v0.1 原型用，生产换构建版本）
+- 前端构建：TypeScript check 零错误，Vite build 成功（719ms）
+- package.json：添加 `gen-types` 脚本（openapi-typescript 自动同步）
+
+**遇到的问题**:
+- `echarts-for-react` 缺少 `tslib` 传递依赖，通过 `npm install tslib --legacy-peer-deps` 解决
+- npm 对等依赖警告较多（React 19 + 部分库），使用 `--legacy-peer-deps` 绕过。v0.1 不影响功能。
+
+**下一步计划**: 提交审查报告，等待批准后进入 Phase 3（前后端联调 + ECharts 实机数据验证）
+
