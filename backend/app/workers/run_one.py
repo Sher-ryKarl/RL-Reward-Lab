@@ -37,7 +37,7 @@ def run_one(
 
     def make_env():
         e = gym.make(env_id, render_mode="rgb_array")
-        e = spec.wrap(e)
+        e = spec.wrap(e, env_id=env_id)
         e = Monitor(e)
         return e
 
@@ -113,7 +113,7 @@ def _record_replay(env_id: str, spec, model: PPO, run_id: str) -> Path | None:
     """Record a 30s replay video using VecVideoRecorder."""
     try:
         eval_env = DummyVecEnv([
-            lambda: Monitor(spec.wrap(gym.make(env_id, render_mode="rgb_array")))
+            lambda: Monitor(spec.wrap(gym.make(env_id, render_mode="rgb_array"), env_id=env_id))
         ])
         video_dir = Path(settings.data_dir) / "videos"
         video_dir.mkdir(parents=True, exist_ok=True)

@@ -40,6 +40,16 @@ ENV_REGISTRY: dict[str, EnvMeta] = {
         name="CartPole",
         action_space="discrete",
     ),
+    "LunarLander-v2": EnvMeta(
+        env_id="LunarLander-v2",
+        name="Lunar Lander",
+        action_space="discrete",
+    ),
+    "Acrobot-v1": EnvMeta(
+        env_id="Acrobot-v1",
+        name="Acrobot",
+        action_space="discrete",
+    ),
 }
 
 ALGO_REGISTRY: dict[str, AlgoMeta] = {

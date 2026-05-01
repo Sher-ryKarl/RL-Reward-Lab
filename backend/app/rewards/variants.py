@@ -1,16 +1,15 @@
-"""Five reward variants for v0.1 — all on MountainCar/CartPole.
+"""Reward variants — env-aware for MountainCar, CartPole, LunarLander, Acrobot.
 
-R0_sparse        – baseline, demonstrate "untrainable without shaping"
-R1_dense         – hand-crafted progress signal
-R2_pbrs_potential – policy-invariant potential-based shaping
-R3_curiosity_rnd  – intrinsic motivation via RND
-R4_misleading     – deliberate anti-example (reward hacking demo)
+R0_sparse          – baseline, demonstrate "untrainable without shaping"
+R1_dense           – hand-crafted progress signal (varies per env)
+R2_pbrs_potential  – policy-invariant potential-based shaping (varies per env)
+R3_curiosity_rnd   – intrinsic motivation via RND
+R4_misleading      – deliberate anti-example (reward hacking demo)
 """
 
 from __future__ import annotations
 
 import gymnasium as gym
-import numpy as np
 
 from app.rewards.base import RewardSpec
 from app.rewards.wrappers import (
@@ -21,17 +20,62 @@ from app.rewards.wrappers import (
 )
 
 
+def _progress_fn(env_id: str):
+    """Return a progress function for DenseProgressWrapper."""
+    if env_id == "LunarLander-v2":
+        return lambda obs, r, t, tr: float(obs[1])  # altitude
+    if env_id == "Acrobot-v1":
+        # tip height = -cos(θ1) - cos(θ1+θ2)
+        return lambda obs, r, t, tr: float(
+            -obs[0] - (obs[0] * obs[2] - obs[1] * obs[3])
+        )
+    # MountainCar-v0 / CartPole-v1: position
+    return lambda obs, r, t, tr: float(obs[0] + 1.2)
+
+
+def _phi_fn(env_id: str):
+    """Return a potential function Phi(s) for PBRSWrapper."""
+    if env_id == "LunarLander-v2":
+        def phi(obs):
+            return float(obs[1] + 0.3 * (1.0 - abs(obs[4])))
+
+        return phi
+    if env_id == "Acrobot-v1":
+        # tip height = -cos(θ1) - cos(θ1+θ2)
+        def phi(obs):
+            return float(-obs[0] - (obs[0] * obs[2] - obs[1] * obs[3]))
+
+        return phi
+    # MountainCar-v0 / CartPole-v1: position + kinetic energy
+    def phi(obs):
+        return float(obs[0] + 0.5 * obs[1] ** 2)
+
+    return phi
+
+
+def _misleading_fn(env_id: str):
+    """Return a misleading reward function."""
+    if env_id == "LunarLander-v2":
+        # reward total speed → encourages crashing instead of careful landing
+        return lambda obs, r, t, tr: float(abs(obs[2]) + abs(obs[3]))
+    if env_id == "Acrobot-v1":
+        # reward angular velocity magnitude → encourages spastic motion
+        return lambda obs, r, t, tr: float(abs(obs[4]) + abs(obs[5]))
+    # MountainCar-v0 / CartPole-v1: reward |velocity|
+    return lambda obs, r, t, tr: float(abs(obs[1]))
+
+
 # ── R0: Sparse ────────────────────────────────────────────────────────────────
 
 class SparseReward(RewardSpec):
     id = "R0_sparse"
     name = "Sparse (终局成功)"
-    description = "仅成功到达旗子时 +1，其余为 0。演示稀疏奖励在 MountainCar 上训练困难。"
+    description = "仅成功到达目标时 +1，其余为 0。演示稀疏奖励训练困难。"
     source_type = "handcrafted"
     terms = ["extrinsic"]
     references = []
 
-    def wrap(self, env: gym.Env) -> gym.Env:
+    def wrap(self, env: gym.Env, env_id: str = "") -> gym.Env:
         return SparseWrapper(env)
 
 
@@ -40,16 +84,13 @@ class SparseReward(RewardSpec):
 class DenseReward(RewardSpec):
     id = "R1_dense"
     name = "Dense (进度信号)"
-    description = "r = position - min_position，用位置进度作为稠密代理信号。"
+    description = "MC: r = position + 1.2; LL: r = altitude。用位置/高度作为稠密代理信号。"
     source_type = "handcrafted"
     terms = ["extrinsic", "progress"]
     references = []
 
-    def wrap(self, env: gym.Env) -> gym.Env:
-        return DenseProgressWrapper(
-            env,
-            progress_fn=lambda obs, r, t, tr: float(obs[0] + 1.2),
-        )
+    def wrap(self, env: gym.Env, env_id: str = "") -> gym.Env:
+        return DenseProgressWrapper(env, _progress_fn(env_id))
 
 
 # ── R2: PBRS ──────────────────────────────────────────────────────────────────
@@ -57,16 +98,13 @@ class DenseReward(RewardSpec):
 class PBRSReward(RewardSpec):
     id = "R2_pbrs_potential"
     name = "PBRS (势函数塑形)"
-    description = "Φ(s) = position + 0.5·velocity²，理论上不改变最优策略 (Ng & Russell 1999)。"
+    description = "MC: Φ(s)=position+0.5v²; LL: Φ(s)=altitude+0.3·uprightness。策略不变性塑形。"
     source_type = "handcrafted"
     terms = ["extrinsic", "shaping_pbrs"]
     references = ["Ng, Harada & Russell, ICML 1999"]
 
-    def wrap(self, env: gym.Env) -> gym.Env:
-        def phi(obs):
-            return float(obs[0] + 0.5 * obs[1] ** 2)
-
-        return PBRSWrapper(env, phi, gamma=0.99)
+    def wrap(self, env: gym.Env, env_id: str = "") -> gym.Env:
+        return PBRSWrapper(env, _phi_fn(env_id), gamma=0.99)
 
 
 # ── R3: Curiosity (RND) ──────────────────────────────────────────────────────
@@ -79,13 +117,7 @@ class CuriosityRNDReward(RewardSpec):
     terms = ["extrinsic", "intrinsic_rnd"]
     references = ["Burda et al., ICLR 2019"]
 
-    def wrap(self, env: gym.Env) -> gym.Env:
-        """Wrap with Sparse then attach RND via RLeXplore callback.
-
-        The intrinsic reward injection happens in the training worker
-        via the RLeXplore callback, not in the env wrapper, because
-        RND needs access to the RL model's internal state.
-        """
+    def wrap(self, env: gym.Env, env_id: str = "") -> gym.Env:
         return SparseWrapper(env)
 
 
@@ -94,16 +126,13 @@ class CuriosityRNDReward(RewardSpec):
 class MisleadingReward(RewardSpec):
     id = "R4_misleading"
     name = "⚠ Misleading (教学反例)"
-    description = "奖励 |速度| 而非到达终点——agent 学会来回晃动刷分而不完成任务。需在 UI 显式警告。"
+    description = "MC: 奖励|速度|; LL: 奖励总速率。agent 学到刷分而非完成任务。需在 UI 显式警告。"
     source_type = "handcrafted"
     terms = ["extrinsic", "misleading"]
     references = []
 
-    def wrap(self, env: gym.Env) -> gym.Env:
-        return MisleadingRewardWrapper(
-            env,
-            misleading_fn=lambda obs, r, t, tr: float(abs(obs[1])),
-        )
+    def wrap(self, env: gym.Env, env_id: str = "") -> gym.Env:
+        return MisleadingRewardWrapper(env, _misleading_fn(env_id))
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────

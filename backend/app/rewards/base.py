@@ -23,8 +23,12 @@ class RewardSpec(ABC):
     references: list[str] = []
 
     @abstractmethod
-    def wrap(self, env: gym.Env) -> gym.Env:
-        """Wrap the env so step() returns the modified reward."""
+    def wrap(self, env: gym.Env, env_id: str = "") -> gym.Env:
+        """Wrap the env so step() returns the modified reward.
+
+        env_id is optional — variants may use it to adapt per-environment
+        potential / progress functions.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
