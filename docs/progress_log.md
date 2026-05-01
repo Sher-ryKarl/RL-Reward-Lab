@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.8.0 连续动作环境 (Pendulum) |
-| 最后 Tag | `v0.8.0-alpha.1` |
+| 当前阶段 | v0.9.0 多奖励 Optuna HPO |
+| 最后 Tag | `v0.9.0-alpha.1` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -380,4 +380,35 @@
 - 39/39 测试全部通过 ✓
 - 前端 TypeScript 0 错误 ✓
 
-**下一步计划**: v0.9 候选方向：Optuna 深化（多目标优化）/ Docker 部署
+**下一步计划**: v0.10 候选方向：Docker 部署 / 前端回放页视频加载彻底修复 / 多目标 Optuna (NSGA-II + Pareto 前沿面)
+
+
+---
+
+### 2026-05-01 — Phase 12: v0.9 多奖励 Optuna HPO
+
+**完成工作**:
+- `backend/app/workers/hpo.py` — `_objective` 新增 `trial.suggest_categorical("reward_id", reward_ids)`，将 reward_id 作为搜索维度纳入 TPE 优化；`run_sweep` 接受 `reward_ids: list[str]` 替代单 `reward_id: str`，回调中提取 `reward_id` 存入 trial result，构建 per_reward 摘要
+- `backend/app/schemas/api.py` — 新增 `PerRewardResult` schema（best_value/best_params/n_trials/trials）；`TrialResult` 新增 `reward_id` 字段；`OptimizationResult` 新增 `per_reward: dict[str, PerRewardResult]`
+- `backend/app/api/routes/experiments.py` — `_execute_optimization` 改为传递 `reward_ids` 列表；`get_optimization` 从 Run 记录读取 reward_id 构建 per_reward 分组返回
+- `frontend/src/api/client.ts` — 新增 `PerRewardResult` 类型；`TrialResult` 新增 `reward_id`；`OptimizationResult` 新增 `per_reward`
+- `frontend/src/components/MonitorPanel/OptimizationCharts.tsx` — 完整重写：散点图按 reward_id 着色 + 图例、Per-Reward 优化历史曲线（best-so-far，按 reward 分组）、Per-Reward 最佳值柱状图对比、Per-Reward 最佳卡片（含参数摘要）、试验历史表新增 Reward 列（彩色标签）、reward_id 从 params 维度中排除
+- 测试矩阵：39/39 全部通过；前端 TypeScript 零错误；Vite build 通过
+
+**设计决策**:
+- `suggest_categorical("reward_id", ...)` 让 TPE 自动学习哪些奖励函数值得更多采样 — 这是 feature，不是 bug：好的奖励函数自然获得更多 trials，劣质奖励被快速淘汰
+- reward_id 存储在 `trial.params` 中（Optuna 原生机制），同时映射到 `RunModel.reward_id`（DB 字段），双路径确保前后端都能读取
+- 前端颜色方案：8 色循环分配，per_reward 卡片左边框着色、表格列彩色标签、图表 series 按 reward 分色
+- 并行坐标图中 reward_id 从 dims 中过滤（非数值不适合 parallel axis）
+
+**遇到的问题**:
+- 6 trials × 3 rewards 小规模测试中 R2_pbrs_potential 未被采样（TPE 在观察到 R1_dense 高值后优先采样它）— 这是预期行为。用户应运行 ≥20 trials 以获得公平的 reward 间比较
+
+**端到端验证结果**:
+- 多奖励 HPO 实验创建（R0/R1/R2 × 6 trials） ✓
+- TPE 正确区分：R1_dense best=164.97（4 trials），R0_sparse best=0.0（2 trials） ✓
+- `get_optimization` 返回 per_reward 分组数据 ✓
+- 39/39 测试全部通过 ✓
+- 前端 TypeScript 0 错误，Vite build 成功 ✓
+
+**下一步计划**: v0.10 候选方向：Docker 部署 / 前端回放页视频加载彻底修复 / 多目标 Optuna (NSGA-II + Pareto)
