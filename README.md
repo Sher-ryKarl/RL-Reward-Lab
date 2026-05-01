@@ -30,7 +30,7 @@
 ### Docker（推荐，一键启动）
 
 ```bash
-git clone <repo-url> && cd RL-Reward-Lab
+git clone https://github.com/Sher-ryKarl/RL-Reward-Lab.git && cd RL-Reward-Lab
 
 # 启动全部服务
 docker compose up -d
