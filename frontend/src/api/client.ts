@@ -37,6 +37,7 @@ export interface EnvInfo {
   env_id: string;
   name: string;
   action_space: string;
+  baseline_reward: number;
 }
 
 export interface RewardInfo {
@@ -85,12 +86,14 @@ export interface ExperimentCreate {
 export interface TrialResult {
   number: number;
   value: number;
+  values: number[];
   params: Record<string, unknown>;
   reward_id: string;
 }
 
 export interface PerRewardResult {
   best_value: number;
+  best_values: number[];
   best_params: Record<string, unknown>;
   n_trials: number;
   trials: TrialResult[];
@@ -104,6 +107,9 @@ export interface OptimizationResult {
   trials: TrialResult[];
   status: string;
   per_reward: Record<string, PerRewardResult>;
+  directions: string[];
+  pareto_front: TrialResult[];
+  n_objectives: number;
 }
 
 export interface RunSummary {

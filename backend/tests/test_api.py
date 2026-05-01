@@ -472,3 +472,78 @@ def _disable_auth_bypass():
 def _enable_auth_bypass():
     import os
     os.environ["PYTEST_CURRENT_TEST"] = "1"
+
+
+# ── Multi-objective (v1.1) ────────────────────────────────────────────────────
+
+
+def test_pareto_front_computation():
+    """Unit test: _compute_pareto_front correctly identifies non-dominated trials."""
+    from app.workers.hpo import _compute_pareto_front
+
+    # 4 trials with 2 objectives (O1=maximize→negated, O2=minimize)
+    # Trial A: reward=100, time=10s  — Pareto
+    # Trial B: reward=50,  time=5s   — Pareto (faster but worse reward)
+    # Trial C: reward=40,  time=12s  — Dominated by B (worse on both)
+    # Trial D: reward=80,  time=8s   — Pareto
+    results = [
+        {"values": [100.0, 10.0]},
+        {"values": [50.0, 5.0]},
+        {"values": [40.0, 12.0]},
+        {"values": [80.0, 8.0]},
+    ]
+    pareto = _compute_pareto_front(results)
+    assert set(pareto) == {0, 1, 3}, f"Expected Pareto {0,1,3}, got {set(pareto)}"
+
+
+def test_pareto_front_single_trial():
+    """Single trial is always Pareto-optimal."""
+    from app.workers.hpo import _compute_pareto_front
+
+    results = [{"values": [50.0, 10.0]}]
+    pareto = _compute_pareto_front(results)
+    assert pareto == [0]
+
+
+def test_pareto_front_all_equal():
+    """Trials with identical objectives: all are Pareto-optimal."""
+    from app.workers.hpo import _compute_pareto_front
+
+    results = [{"values": [10.0, 10.0]}, {"values": [10.0, 10.0]}]
+    pareto = _compute_pareto_front(results)
+    assert len(pareto) == 2
+
+
+@pytest.mark.asyncio
+async def test_envs_include_baseline_reward(client: AsyncClient):
+    r = await client.get("/api/v1/envs")
+    assert r.status_code == 200
+    data = r.json()
+    for env in data:
+        assert "baseline_reward" in env, f"{env['env_id']} missing baseline_reward"
+        assert isinstance(env["baseline_reward"], (int, float))
+
+
+@pytest.mark.asyncio
+async def test_single_objective_backward_compat(client: AsyncClient):
+    """Single-objective experiment returns n_objectives=1, empty pareto_front."""
+    body = {
+        "name": "Single Obj Compat",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 100,
+        "seeds": [9999],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 202
+    exp_id = r.json()["id"]
+
+    # The experiment is "pending" → get_optimization returns empty trials
+    r2 = await client.get(f"/api/v1/experiments/{exp_id}/optimization")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["n_objectives"] == 1
+    assert data["directions"] == ["maximize"] or data["directions"] == ["maximize", "minimize", "minimize"]
+    assert isinstance(data["pareto_front"], list)

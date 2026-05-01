@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v1.0.0-alpha.2 JWT 认证 + 回放视频修复 |
-| 最后 Tag | `v1.0.0-alpha.2` |
+| 当前阶段 | v1.1.0-alpha.1 NSGA-II 多目标优化 |
+| 最后 Tag | `v1.1.0-alpha.1` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -499,3 +499,48 @@
 - 6 个新认证测试覆盖：成功登录、错误密码、未认证拒绝写、token 过期拒绝、自定义奖励保护、回放状态端点 ✓
 
 **下一步计划**: 合并到 main → 打 tag v1.0.0 正式版 → v1.1 多目标 Optuna（NSGA-II + Pareto）
+
+
+---
+
+### 2026-05-01 — Phase 15: v1.1.0-alpha.1 NSGA-II 多目标优化
+
+**完成工作**:
+- `backend/app/core/registry.py` — EnvMeta 新增 `baseline_reward` 字段；5 个环境各补充保守收敛阈值（MountainCar=-110, CartPole=195, LunarLander=200, Acrobot=-100, Pendulum=-500）
+- `backend/app/workers/hpo.py` — 全面重写：
+  - `TPESampler` → `NSGAIISampler`（种群大小=50，交叉概率=0.9）
+  - `_objective` 返回 3 目标 tuple：`(ep_rew_mean, wall_time, convergence_steps)`
+  - wall_time 通过 `time.perf_counter()` 计时
+  - convergence_steps 通过 `_ConvergenceCallback` 监控训练中首次达到 baseline_reward 的步数
+  - 新增 `_compute_pareto_front()` — O(n²) 非支配排序，返回 Pareto 最优 trial 索引
+  - 单目标模式保留（`n_objectives=1` 回退 TPESampler），向后兼容
+- `backend/app/schemas/api.py` — TrialResult 新增 `values: list[float]`；PerRewardResult 新增 `best_values`；OptimizationResult 新增 `directions`、`pareto_front`、`n_objectives`
+- `backend/app/api/routes/experiments.py` — `get_optimization` 从 Run final_metrics 提取 wall_time/convergence_steps 构建多目标 values；计算 Pareto 前沿面并返回；`_execute_optimization` 传递 `n_objectives=3`
+- `backend/app/api/routes/envs.py` — 响应新增 `baseline_reward` 字段
+- `frontend/src/api/client.ts` — 新增 `values`、`best_values`、`directions`、`pareto_front`、`n_objectives`、`baseline_reward` 类型字段
+- `frontend/src/components/MonitorPanel/ParetoChart.tsx` (NEW) — Pareto 前沿面可视化：
+  - 2D 散点图（wall_time vs ep_rew_mean），按 reward_id 着色
+  - Pareto 最优 trial 加星标 + 深色边框突出
+  - Pareto 前沿连接虚线
+  - 第二视图（convergence_steps vs ep_rew_mean，3 目标时显示）
+- `frontend/src/components/MonitorPanel/OptimizationCharts.tsx` — 集成 ParetoChart；trial 表格新增 "Pareto" 列（✅ 标记最优 trial）
+- `backend/tests/test_api.py` — 新增 5 个测试：Pareto 计算（非支配排序正确性）、单 trial Pareto、全相等 Pareto、envs baseline_reward、单目标向后兼容
+- 测试矩阵：50/50 全部通过（45 → 50 测试）
+- 前端 TypeScript 零错误，Vite production build 通过
+
+**设计决策**:
+- 3 目标选择：ep_rew_mean（最大化）、wall_time（最小化）、convergence_steps（最小化）三者天然冲突，构成闭合的实用优化空间
+- `TrialResult.value` 保留为 O1 单值（向后兼容），新增 `values` 为完整数组
+- 单目标实验优雅退化：`n_objectives=1`、`directions=["maximize"]`、`pareto_front=[]`
+- convergence_steps 未达标时降级为 total_steps（避免空值）
+- baseline_reward 值保守设置（低于官方 solve 阈值），确保 convergence 指标有意义
+- Pareto 计算使用原生 O(n²) 算法（trial 数量 ≤500，性能足够），无需引入额外依赖
+
+**遇到的问题**: 无
+
+**端到端验证结果**:
+- 50/50 测试全部通过 ✓
+- 前端 TypeScript 零错误，Vite build 成功 ✓
+- Pareto 非支配排序单元测试覆盖：标准 4 trial 场景、单 trial、全相等 ✓
+
+**下一步计划**: v1.2 候选方向：交互式 Pareto 权重调整 / 约束优化（training_time < 5min）/ 多奖励 HPO + 多目标深度结合

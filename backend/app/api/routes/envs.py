@@ -9,5 +9,5 @@ router = APIRouter(prefix="/api/v1", tags=["envs"])
 
 @router.get("/envs")
 async def list_envs():
-    return [{"env_id": e.env_id, "name": e.name, "action_space": e.action_space}
+    return [{"env_id": e.env_id, "name": e.name, "action_space": e.action_space, "baseline_reward": e.baseline_reward}
             for e in ENV_REGISTRY.values()]

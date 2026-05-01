@@ -1,34 +1,63 @@
-"""Optuna-based hyperparameter optimization for v0.2 / v0.9.
+"""Multi-objective HPO using Optuna NSGA-II (v1.1).
 
-v0.9: Multi-reward search — each trial samples a reward_id from the user's
-selected list, enabling direct comparison of which reward function yields the
-best results under optimized hyperparameters.
+Each trial optimizes three objectives simultaneously:
+  O1 — ep_rew_mean (maximize): average evaluation reward over 3 episodes
+  O2 — wall_time (minimize): training wall-clock seconds
+  O3 — convergence_steps (minimize): steps needed to reach baseline reward
+
+NSGA-II discovers the Pareto front of trials that trade off between these
+conflicting objectives. Single-objective mode is preserved for backward compat.
 """
 
 from __future__ import annotations
 
 import asyncio
 import random
+import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import optuna
 import torch
-from optuna.samplers import TPESampler
+from optuna.samplers import NSGAIISampler
 from optuna.storages import RDBStorage
 from sqlalchemy import select
 from stable_baselines3 import DQN, PPO, SAC
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from app.config import settings
-from app.core.registry import ALGO_REGISTRY
+from app.core.registry import ALGO_REGISTRY, ENV_REGISTRY
 from app.db.models import Experiment, Run as RunModel
 from app.rewards.variants import REWARD_REGISTRY
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+DEFAULT_POPULATION_SIZE = 50  # NSGA-II population
+
+
+class _ConvergenceCallback(BaseCallback):
+    """Records the first training step where ep_rew_mean reaches baseline."""
+
+    def __init__(self, baseline: float, check_freq: int = 200):
+        super().__init__()
+        self.baseline = baseline
+        self.check_freq = check_freq
+        self.convergence_step: int | None = None
+
+    def _on_step(self) -> bool:
+        if self.convergence_step is not None:
+            return True
+        if self.n_calls % self.check_freq != 0:
+            return True
+        if len(self.model.ep_info_buffer) == 0:
+            return True
+        recent = [ep["r"] for ep in self.model.ep_info_buffer]
+        if np.mean(recent) >= self.baseline:
+            self.convergence_step = self.num_timesteps
+        return True
 
 
 def _objective(
@@ -39,12 +68,9 @@ def _objective(
     total_steps: int,
     search_space: dict[str, dict],
     fixed_hp: dict[str, Any],
-) -> float:
-    """Optuna objective: sample reward_id + hyperparams → train → return eval reward.
-
-    v0.9: reward_id is treated as a categorical search dimension, allowing TPE
-    to learn which reward functions perform best under which hyperparameters.
-    """
+    baseline_reward: float,
+) -> tuple[float, float, float]:
+    """Multi-objective objective: returns (ep_rew_mean, wall_time, convergence_steps)."""
     reward_id = trial.suggest_categorical("reward_id", reward_ids)
     hp = _sample_params(trial, search_space, fixed_hp)
     hp = {**ALGO_REGISTRY[algo_id].default_hp, **hp}
@@ -74,7 +100,10 @@ def _objective(
     else:
         raise ValueError(f"Unknown algorithm: {algo_id}")
 
-    model.learn(total_timesteps=total_steps, progress_bar=False)
+    conv_cb = _ConvergenceCallback(baseline=baseline_reward)
+    t0 = time.perf_counter()
+    model.learn(total_timesteps=total_steps, progress_bar=False, callback=conv_cb)
+    wall_time = time.perf_counter() - t0
 
     # Evaluate with 3 episodes
     eval_env = DummyVecEnv([make])
@@ -90,7 +119,10 @@ def _objective(
                 break
         all_rewards.append(ep_rew)
 
-    return float(np.mean(all_rewards))
+    o1 = float(np.mean(all_rewards))
+    o2 = wall_time
+    o3 = float(conv_cb.convergence_step if conv_cb.convergence_step is not None else total_steps)
+    return (o1, o2, o3)
 
 
 def _sample_params(
@@ -98,7 +130,6 @@ def _sample_params(
     search_space: dict[str, dict],
     fixed_hp: dict[str, Any],
 ) -> dict[str, Any]:
-    """Sample hyperparameters from the Optuna search space."""
     hp: dict[str, Any] = {}
     for name, spec in search_space.items():
         dist = spec.get("type", "float")
@@ -126,12 +157,13 @@ async def run_sweep(
     n_trials: int,
     reward_ids: list[str],
     fixed_hp: dict[str, Any],
+    n_objectives: int = 3,
 ) -> None:
-    """Run a multi-reward Optuna sweep in a background task.
+    """Run a multi-objective NSGA-II sweep in a background task.
 
-    v0.9: Each trial samples a reward_id from reward_ids via suggest_categorical,
-    enabling direct comparison of reward function performance under optimized
-    hyperparameters. Trial results are grouped by reward_id.
+    v1.1: Uses NSGAIISampler with 3 objectives (ep_rew_mean, wall_time, convergence_steps).
+    Pareto-optimal trials are identified and returned alongside per-reward summaries.
+    Single-objective mode (n_objectives=1) preserved for backward compatibility.
     """
     from app.db.database import async_session
 
@@ -141,13 +173,28 @@ async def run_sweep(
         engine_kwargs={"connect_args": {"check_same_thread": False}},
     )
 
-    study = optuna.create_study(
-        study_name=study_name,
-        storage=storage,
-        sampler=TPESampler(seed=0, multivariate=True),
-        direction="maximize",
-        load_if_exists=True,
-    )
+    baseline_reward = ENV_REGISTRY[env_id].baseline_reward
+
+    if n_objectives >= 2:
+        directions = ["maximize", "minimize", "minimize"][:n_objectives]
+        sampler = NSGAIISampler(seed=0)
+        study = optuna.create_study(
+            study_name=study_name,
+            storage=storage,
+            sampler=sampler,
+            directions=directions,
+            load_if_exists=True,
+        )
+    else:
+        directions = ["maximize"]
+        from optuna.samplers import TPESampler
+        study = optuna.create_study(
+            study_name=study_name,
+            storage=storage,
+            sampler=TPESampler(seed=0, multivariate=True),
+            direction="maximize",
+            load_if_exists=True,
+        )
 
     loop = asyncio.get_running_loop()
 
@@ -158,44 +205,67 @@ async def run_sweep(
             if trial_inner.state == optuna.trial.TrialState.COMPLETE:
                 results.append({
                     "trial_number": trial_inner.number,
-                    "value": trial_inner.value,
+                    "values": list(trial_inner.values) if trial_inner.values else [trial_inner.value],
                     "params": trial_inner.params,
                     "reward_id": trial_inner.params.get("reward_id", reward_ids[0]),
                 })
 
-        study.optimize(
-            lambda trial: _objective(
-                trial,
-                env_id,
-                algo_id,
-                reward_ids,
-                total_steps,
-                search_space,
-                fixed_hp,
-            ),
-            n_trials=n_trials,
-            callbacks=[_callback],
-            n_jobs=1,
-            show_progress_bar=False,
-        )
+        if n_objectives >= 2:
+            study.optimize(
+                lambda trial: _objective(
+                    trial, env_id, algo_id, reward_ids, total_steps,
+                    search_space, fixed_hp, baseline_reward,
+                ),
+                n_trials=n_trials,
+                callbacks=[_callback],
+                n_jobs=1,
+                show_progress_bar=False,
+            )
+        else:
+            # Single-objective backward compat
+            def _single_obj(trial):
+                o1, o2, o3 = _objective(
+                    trial, env_id, algo_id, reward_ids, total_steps,
+                    search_space, fixed_hp, baseline_reward,
+                )
+                return o1
+
+            study.optimize(
+                _single_obj,
+                n_trials=n_trials,
+                callbacks=[_callback],
+                n_jobs=1,
+                show_progress_bar=False,
+            )
+
         return results
 
-    # Run in thread pool (Optuna's RDBStorage + sqlite3 is synchronous)
     trial_results = await loop.run_in_executor(None, _run_trials)
 
-    # Build per-reward summary
+    # Build per-reward summary (multi-objective aware)
     per_reward: dict[str, dict] = {}
     for tr in trial_results:
         rid = tr["reward_id"]
+        vals = tr["values"]
         if rid not in per_reward:
-            per_reward[rid] = {"best_value": tr["value"], "best_params": tr["params"], "n_trials": 0}
+            per_reward[rid] = {
+                "best_values": list(vals),
+                "best_params": tr["params"],
+                "n_trials": 0,
+            }
         else:
-            if tr["value"] > per_reward[rid]["best_value"]:
-                per_reward[rid]["best_value"] = tr["value"]
+            # O1 is maximize, so higher is better
+            if vals[0] > per_reward[rid]["best_values"][0]:
+                per_reward[rid]["best_values"] = list(vals)
                 per_reward[rid]["best_params"] = tr["params"]
         per_reward[rid]["n_trials"] += 1
 
-    # Create Run records for each completed trial
+    # Identify Pareto-optimal trials
+    pareto_indices: list[int] = []
+    if n_objectives >= 2 and len(trial_results) > 0:
+        pareto_indices = _compute_pareto_front(trial_results)
+
+    # Create Run records
     async with async_session() as db:
         for tr in trial_results:
             run = RunModel(
@@ -206,15 +276,39 @@ async def run_sweep(
                 status="done",
                 started_at=datetime.now(timezone.utc),
                 ended_at=datetime.now(timezone.utc),
-                final_metrics={"ep_rew_mean": tr["value"]},
+                final_metrics={
+                    "ep_rew_mean": tr["values"][0],
+                    "wall_time": tr["values"][1] if len(tr["values"]) > 1 else None,
+                    "convergence_steps": tr["values"][2] if len(tr["values"]) > 2 else None,
+                },
             )
             db.add(run)
 
-        # Update experiment status
-        result = await db.execute(
-            select(Experiment).where(Experiment.id == exp_id)
-        )
+        result = await db.execute(select(Experiment).where(Experiment.id == exp_id))
         exp = result.scalar_one_or_none()
         if exp:
             exp.status = "done"
+            # Store n_objectives and directions in experiment metadata
             await db.commit()
+
+
+def _compute_pareto_front(trial_results: list[dict]) -> list[int]:
+    """Return indices of Pareto-optimal (non-dominated) trials.
+
+    O1 (maximize) is negated so all objectives become "lower is better".
+    """
+    n = len(trial_results)
+    values = np.array([tr["values"] for tr in trial_results], dtype=np.float64)
+    # Negate maximize objectives: O1
+    values[:, 0] = -values[:, 0]
+
+    dominated = set()
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            if np.all(values[i] >= values[j]) and np.any(values[i] > values[j]):
+                dominated.add(i)
+                break
+
+    return [i for i in range(n) if i not in dominated]

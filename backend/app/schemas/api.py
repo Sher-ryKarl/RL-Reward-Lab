@@ -53,13 +53,15 @@ class DemoSummary(BaseModel):
 
 class TrialResult(BaseModel):
     number: int
-    value: float
+    value: float  # O1: ep_rew_mean (primary, backward-compat)
+    values: list[float] = Field(default_factory=list)  # all objectives [O1, O2, O3]
     params: dict
     reward_id: str = ""
 
 
 class PerRewardResult(BaseModel):
     best_value: float
+    best_values: list[float] = Field(default_factory=list)  # per-objective best
     best_params: dict
     n_trials: int
     trials: list[TrialResult] = Field(default_factory=list)
@@ -73,6 +75,9 @@ class OptimizationResult(BaseModel):
     trials: list[TrialResult]
     status: str
     per_reward: dict[str, PerRewardResult] = Field(default_factory=dict)
+    directions: list[str] = Field(default_factory=lambda: ["maximize"])
+    pareto_front: list[TrialResult] = Field(default_factory=list)
+    n_objectives: int = 1
 
 
 class RunSummary(BaseModel):

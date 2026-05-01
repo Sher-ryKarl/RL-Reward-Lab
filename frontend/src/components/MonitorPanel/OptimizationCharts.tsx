@@ -1,5 +1,6 @@
 import ReactEChartsCore from "echarts-for-react";
 import type { OptimizationResult } from "../../api/client";
+import { ParetoChart } from "./ParetoChart";
 
 interface Props {
   data: OptimizationResult;
@@ -211,12 +212,20 @@ export function OptimizationCharts({ data }: Props) {
         </div>
       )}
 
+      {/* Pareto frontier (v1.1 multi-objective) */}
+      <ParetoChart
+        trials={data.trials}
+        paretoFront={data.pareto_front}
+        nObjectives={data.n_objectives}
+      />
+
       {/* Trial history table */}
       <div className="border rounded bg-white overflow-auto max-h-80">
         <table className="w-full text-xs">
           <thead className="bg-gray-100 sticky top-0">
             <tr>
               <th className="px-2 py-1 text-left">#</th>
+              {data.n_objectives >= 2 && <th className="px-2 py-1 text-center">Pareto</th>}
               <th className="px-2 py-1 text-left">Reward</th>
               <th className="px-2 py-1 text-left">Value</th>
               {dims.map((d) => (
@@ -227,21 +236,28 @@ export function OptimizationCharts({ data }: Props) {
             </tr>
           </thead>
           <tbody>
-            {[...data.trials]
-              .sort((a, b) => b.value - a.value)
-              .map((t) => (
-                <tr
-                  key={t.number}
-                  className="hover:bg-gray-50"
-                  style={{
-                    background:
-                      t.value === data.per_reward[t.reward_id]?.best_value
-                        ? `${rewardColorMap[t.reward_id] || "#ddd"}10`
-                        : undefined,
-                  }}
-                >
-                  <td className="px-2 py-1">{t.number}</td>
-                  <td className="px-2 py-1">
+            {(() => {
+              const paretoNums = new Set(data.pareto_front.map((t) => t.number));
+              return [...data.trials]
+                .sort((a, b) => b.value - a.value)
+                .map((t) => (
+                  <tr
+                    key={t.number}
+                    className="hover:bg-gray-50"
+                    style={{
+                      background:
+                        t.value === data.per_reward[t.reward_id]?.best_value
+                          ? `${rewardColorMap[t.reward_id] || "#ddd"}10`
+                          : undefined,
+                    }}
+                  >
+                    <td className="px-2 py-1">{t.number}</td>
+                    {data.n_objectives >= 2 && (
+                      <td className="px-2 py-1 text-center">
+                        {paretoNums.has(t.number) ? "✅" : ""}
+                      </td>
+                    )}
+                    <td className="px-2 py-1">
                     <span
                       className="px-1.5 py-0.5 rounded text-xs"
                       style={{
@@ -259,7 +275,8 @@ export function OptimizationCharts({ data }: Props) {
                     </td>
                   ))}
                 </tr>
-              ))}
+                ));
+            })()}
           </tbody>
         </table>
       </div>

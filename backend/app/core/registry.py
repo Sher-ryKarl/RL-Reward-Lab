@@ -14,6 +14,7 @@ class EnvMeta:
     env_id: str
     name: str
     action_space: str  # "discrete" | "continuous"
+    baseline_reward: float = 0.0  # reasonable threshold for convergence tracking
     single_or_multi: str = "single"
     supports_render: bool = True
 
@@ -34,26 +35,31 @@ ENV_REGISTRY: dict[str, EnvMeta] = {
         env_id="MountainCar-v0",
         name="Mountain Car",
         action_space="discrete",
+        baseline_reward=-110,
     ),
     "CartPole-v1": EnvMeta(
         env_id="CartPole-v1",
         name="CartPole",
         action_space="discrete",
+        baseline_reward=195,
     ),
     "LunarLander-v2": EnvMeta(
         env_id="LunarLander-v2",
         name="Lunar Lander",
         action_space="discrete",
+        baseline_reward=200,
     ),
     "Acrobot-v1": EnvMeta(
         env_id="Acrobot-v1",
         name="Acrobot",
         action_space="discrete",
+        baseline_reward=-100,
     ),
     "Pendulum-v1": EnvMeta(
         env_id="Pendulum-v1",
         name="Pendulum",
         action_space="continuous",
+        baseline_reward=-500,
     ),
 }
 

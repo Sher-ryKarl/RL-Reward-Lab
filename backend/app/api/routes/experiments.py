@@ -19,7 +19,7 @@ from app.schemas.api import (
     RunSummary,
     TrialResult,
 )
-from app.workers.hpo import run_sweep
+from app.workers.hpo import _compute_pareto_front, run_sweep
 from app.workers.scheduler import RUN_QUEUES, schedule_run
 
 router = APIRouter(prefix="/api/v1/experiments", tags=["experiments"])
@@ -178,29 +178,59 @@ async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
     best_value: float | None = None
     best_params: dict = {}
     per_reward: dict[str, dict] = {}
+    has_multi_objective = False
     for run in exp.runs:
-        value = run.final_metrics.get("ep_rew_mean") if run.final_metrics else None
+        fm = run.final_metrics or {}
+        o1 = fm.get("ep_rew_mean", 0.0)
+        o2 = fm.get("wall_time")
+        o3 = fm.get("convergence_steps")
+        value = o1
         reward_id = run.reward_id
+
+        values: list[float] = []
+        if o2 is not None and o3 is not None:
+            values = [float(o1), float(o2), float(o3)]
+            has_multi_objective = True
+        elif o2 is not None:
+            values = [float(o1), float(o2)]
+            has_multi_objective = True
+
         trial = TrialResult(
             number=run.seed,
-            value=value or 0.0,
+            value=float(value),
+            values=values,
             params=run.hyperparams or {},
             reward_id=reward_id,
         )
         trials.append(trial)
-        if value is not None and (best_value is None or value > best_value):
+        if best_value is None or value > best_value:
             best_value = value
             best_params = run.hyperparams or {}
 
-        # Per-reward grouping
         if reward_id not in per_reward:
-            per_reward[reward_id] = {"best_value": value or 0.0, "best_params": run.hyperparams or {}, "n_trials": 0, "trials": []}
+            per_reward[reward_id] = {
+                "best_value": value,
+                "best_values": values.copy() if values else [float(value)],
+                "best_params": run.hyperparams or {},
+                "n_trials": 0,
+                "trials": [],
+            }
         entry = per_reward[reward_id]
-        if value is not None and value > entry["best_value"]:
+        if value > entry["best_value"]:
             entry["best_value"] = value
+            entry["best_values"] = values.copy() if values else [float(value)]
             entry["best_params"] = run.hyperparams or {}
         entry["n_trials"] += 1
         entry["trials"].append(trial)
+
+    # Pareto front
+    pareto_front: list[TrialResult] = []
+    if has_multi_objective and len(trials) > 0:
+        trial_dicts = [{"values": t.values} for t in trials]
+        pareto_idx = _compute_pareto_front(trial_dicts)
+        pareto_front = [trials[i] for i in pareto_idx]
+
+    n_obj = 3 if has_multi_objective else 1
 
     return OptimizationResult(
         experiment_id=exp.id,
@@ -210,6 +240,9 @@ async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
         trials=trials,
         status=exp.status,
         per_reward=per_reward,
+        directions=["maximize", "minimize", "minimize"][:n_obj] if has_multi_objective else ["maximize"],
+        pareto_front=pareto_front,
+        n_objectives=n_obj,
     )
 
 
@@ -347,6 +380,7 @@ async def _execute_optimization(
                 n_trials=n_trials,
                 reward_ids=reward_ids,
                 fixed_hp=fixed_hp,
+                n_objectives=3,
             )
         except Exception as exc:
             import traceback
