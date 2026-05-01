@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
-import { api, type EnvInfo, type RewardInfo } from "../api/client";
+import { api, type AlgoInfo, type EnvInfo, type RewardInfo } from "../api/client";
 import { ExperimentForm } from "../components/ExperimentForm/ExperimentForm";
 
 export function NewExperimentPage() {
   const [envs, setEnvs] = useState<EnvInfo[]>([]);
+  const [algos, setAlgos] = useState<AlgoInfo[]>([]);
   const [rewards, setRewards] = useState<RewardInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.listEnvs(), api.listRewards()])
-      .then(([e, r]) => {
+    Promise.all([api.listEnvs(), api.listAlgos(), api.listRewards()])
+      .then(([e, a, r]) => {
         setEnvs(e);
+        setAlgos(a);
         setRewards(r);
       })
       .catch((e) => setError(String(e)))
@@ -36,7 +38,7 @@ export function NewExperimentPage() {
   return (
     <div>
       <h2 className="text-lg font-semibold text-gray-800 mb-4">New Experiment</h2>
-      <ExperimentForm envs={envs} rewards={rewards} />
+      <ExperimentForm envs={envs} algos={algos} rewards={rewards} />
     </div>
   );
 }

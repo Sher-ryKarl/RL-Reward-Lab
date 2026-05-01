@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api, type EnvInfo, type RewardInfo, type ExperimentCreate } from "../../api/client";
+import { useEffect, useState } from "react";
+import { api, type AlgoInfo, type EnvInfo, type RewardInfo, type ExperimentCreate } from "../../api/client";
 import { EnvSelector } from "./EnvSelector";
 import { RewardMultiSelect } from "./RewardMultiSelect";
 import { HyperParamPanel } from "./HyperParamPanel";
@@ -7,21 +7,15 @@ import { SearchSpaceEditor } from "./SearchSpaceEditor";
 
 interface Props {
   envs: EnvInfo[];
+  algos: AlgoInfo[];
   rewards: RewardInfo[];
 }
 
-export function ExperimentForm({ envs, rewards }: Props) {
+export function ExperimentForm({ envs, algos, rewards }: Props) {
   const [envId, setEnvId] = useState("MountainCar-v0");
+  const [algoId, setAlgoId] = useState("PPO");
   const [rewardIds, setRewardIds] = useState<string[]>(["R0_sparse", "R1_dense"]);
-  const [hp, setHp] = useState({
-    learning_rate: 3e-4,
-    n_steps: 2048,
-    batch_size: 64,
-    gamma: 0.99,
-    gae_lambda: 0.95,
-    ent_coef: 0.0,
-    clip_range: 0.2,
-  });
+  const [hp, setHp] = useState<Record<string, unknown>>({});
   const [totalSteps, setTotalSteps] = useState(50_000);
   const [seeds, setSeeds] = useState([0]);
   const [name, setName] = useState("");
@@ -31,6 +25,14 @@ export function ExperimentForm({ envs, rewards }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
+
+  // Reset hyperparams when algo changes
+  useEffect(() => {
+    const algo = algos.find((a) => a.algo_id === algoId);
+    if (algo) setHp({ ...algo.default_hp });
+  }, [algoId, algos]);
+
+  const selectedAlgo = algos.find((a) => a.algo_id === algoId);
 
   const submit = async () => {
     if (rewardIds.length === 0) {
@@ -46,7 +48,7 @@ export function ExperimentForm({ envs, rewards }: Props) {
     const body: ExperimentCreate = {
       name: name || `Exp-${Date.now().toString(36)}`,
       env_id: envId,
-      algo_id: "PPO",
+      algo_id: algoId as ExperimentCreate["algo_id"],
       reward_ids: rewardIds,
       hyperparams: hp,
       total_steps: totalSteps,
@@ -92,8 +94,43 @@ export function ExperimentForm({ envs, rewards }: Props) {
       </div>
 
       <EnvSelector envs={envs} selected={envId} onChange={setEnvId} />
+
+      {/* ── Algorithm Selector (v0.4) ──────────────────────────────── */}
+      <fieldset className="border rounded p-4">
+        <legend className="text-sm font-semibold text-gray-700">Algorithm</legend>
+        <div className="flex gap-4 mt-2">
+          {algos.map((a) => {
+            const canUse = envs.find((e) => e.env_id === envId);
+            const supported = canUse
+              ? (canUse.action_space === "discrete" && a.discrete) ||
+                (canUse.action_space === "continuous" && a.continuous)
+              : false;
+            return (
+              <label
+                key={a.algo_id}
+                className={`flex items-center gap-2 ${
+                  supported ? "cursor-pointer" : "opacity-40 cursor-not-allowed"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="algo"
+                  value={a.algo_id}
+                  checked={selectedAlgo?.algo_id === a.algo_id}
+                  disabled={!supported}
+                  onChange={() => supported && setAlgoId(a.algo_id)}
+                  className="accent-indigo-600"
+                />
+                <span className="font-medium">{a.name}</span>
+                <span className="text-xs text-gray-400">({a.algo_id})</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
       <RewardMultiSelect rewards={rewards} selected={rewardIds} onChange={setRewardIds} />
-      <HyperParamPanel hp={hp} onChange={setHp} />
+      <HyperParamPanel hp={hp} onChange={setHp} algoId={algoId} />
 
       {/* ── Optimization Toggle (v0.2) ──────────────────────────────── */}
       <div className="border rounded p-3 space-y-3 bg-gray-50">

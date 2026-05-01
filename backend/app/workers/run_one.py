@@ -14,10 +14,11 @@ import gymnasium as gym
 import mlflow
 import numpy as np
 import torch
-from stable_baselines3 import PPO
+from stable_baselines3 import DQN, PPO, SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecVideoRecorder
 from app.config import settings
+from app.core.registry import ALGO_REGISTRY
 from app.rewards.variants import REWARD_REGISTRY
 from app.rewards.rnd import RNDCallback
 from app.workers.callbacks import StreamCallback
@@ -62,14 +63,35 @@ def run_one(
         })
         mlflow.log_dict(spec.to_dict(), "reward_spec.json")
 
-        model = PPO(
-            "MlpPolicy",
-            vec,
-            device=settings.device,
-            tensorboard_log=str(settings.data_dir / "tb" / run_id),
-            seed=seed,
-            **hp,
-        )
+        # Merge user hp with algo defaults (user overrides defaults)
+        algo_hp = {**ALGO_REGISTRY[algo].default_hp, **hp}
+
+        if algo == "PPO":
+            model = PPO(
+                "MlpPolicy", vec,
+                device=settings.device,
+                tensorboard_log=str(settings.data_dir / "tb" / run_id),
+                seed=seed,
+                **algo_hp,
+            )
+        elif algo == "DQN":
+            model = DQN(
+                "MlpPolicy", vec,
+                device=settings.device,
+                tensorboard_log=str(settings.data_dir / "tb" / run_id),
+                seed=seed,
+                **algo_hp,
+            )
+        elif algo == "SAC":
+            model = SAC(
+                "MlpPolicy", vec,
+                device=settings.device,
+                tensorboard_log=str(settings.data_dir / "tb" / run_id),
+                seed=seed,
+                **algo_hp,
+            )
+        else:
+            raise ValueError(f"Unknown algorithm: {algo}")
 
         callback = StreamCallback(
             queue, run_id=run_id, reward_id=reward_id, every=1000

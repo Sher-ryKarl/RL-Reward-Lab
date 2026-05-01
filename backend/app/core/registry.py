@@ -68,6 +68,43 @@ ALGO_REGISTRY: dict[str, AlgoMeta] = {
             "clip_range": 0.2,
         },
     ),
+    "DQN": AlgoMeta(
+        algo_id="DQN",
+        name="Deep Q-Network",
+        discrete=True,
+        continuous=False,
+        default_hp={
+            "learning_rate": 1e-4,
+            "buffer_size": 100_000,
+            "learning_starts": 1_000,
+            "batch_size": 32,
+            "tau": 1.0,
+            "gamma": 0.99,
+            "train_freq": 4,
+            "gradient_steps": 1,
+            "exploration_fraction": 0.1,
+            "exploration_initial_eps": 1.0,
+            "exploration_final_eps": 0.02,
+        },
+    ),
+    "SAC": AlgoMeta(
+        algo_id="SAC",
+        name="Soft Actor-Critic",
+        discrete=False,
+        continuous=True,
+        default_hp={
+            "learning_rate": 3e-4,
+            "buffer_size": 100_000,
+            "learning_starts": 100,
+            "batch_size": 256,
+            "tau": 0.005,
+            "gamma": 0.99,
+            "train_freq": 1,
+            "gradient_steps": 1,
+            "ent_coef": "auto",
+            "use_sde": False,
+        },
+    ),
 }
 
 

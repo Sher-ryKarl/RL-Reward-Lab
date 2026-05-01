@@ -32,22 +32,20 @@ export interface RewardInfo {
   references: string[];
 }
 
-export interface PPOHyper {
-  learning_rate: number;
-  n_steps: number;
-  batch_size: number;
-  gamma: number;
-  gae_lambda: number;
-  ent_coef: number;
-  clip_range: number;
+export interface AlgoInfo {
+  algo_id: string;
+  name: string;
+  discrete: boolean;
+  continuous: boolean;
+  default_hp: Record<string, unknown>;
 }
 
 export interface ExperimentCreate {
   name: string;
   env_id: string;
-  algo_id: "PPO";
+  algo_id: "PPO" | "DQN" | "SAC";
   reward_ids: string[];
-  hyperparams: PPOHyper;
+  hyperparams: Record<string, unknown>;
   total_steps: number;
   seeds: number[];
   optimize?: boolean;
@@ -113,6 +111,9 @@ export interface MetricEvent {
 export const api = {
   // Envs
   listEnvs: () => request<EnvInfo[]>("/api/v1/envs"),
+
+  // Algos
+  listAlgos: () => request<AlgoInfo[]>("/api/v1/algos"),
 
   // Rewards
   listRewards: () => request<RewardInfo[]>("/api/v1/rewards"),

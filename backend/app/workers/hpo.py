@@ -17,11 +17,12 @@ import torch
 from optuna.samplers import TPESampler
 from optuna.storages import RDBStorage
 from sqlalchemy import select
-from stable_baselines3 import PPO
+from stable_baselines3 import DQN, PPO, SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from app.config import settings
+from app.core.registry import ALGO_REGISTRY
 from app.db.models import Experiment, Run as RunModel
 from app.rewards.variants import REWARD_REGISTRY
 
@@ -31,6 +32,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 def _objective(
     trial: optuna.Trial,
     env_id: str,
+    algo_id: str,
     reward_id: str,
     total_steps: int,
     search_space: dict[str, dict],
@@ -38,6 +40,7 @@ def _objective(
 ) -> float:
     """Optuna objective: sample → train → return eval reward."""
     hp = _sample_params(trial, search_space, fixed_hp)
+    hp = {**ALGO_REGISTRY[algo_id].default_hp, **hp}
 
     spec = REWARD_REGISTRY[reward_id]
 
@@ -55,19 +58,14 @@ def _objective(
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    model = PPO(
-        "MlpPolicy",
-        vec,
-        device=settings.device,
-        seed=seed,
-        learning_rate=hp.get("learning_rate", 3e-4),
-        n_steps=hp.get("n_steps", 2048),
-        batch_size=hp.get("batch_size", 64),
-        gamma=hp.get("gamma", 0.99),
-        gae_lambda=hp.get("gae_lambda", 0.95),
-        ent_coef=hp.get("ent_coef", 0.0),
-        clip_range=hp.get("clip_range", 0.2),
-    )
+    if algo_id == "PPO":
+        model = PPO("MlpPolicy", vec, device=settings.device, seed=seed, **hp)
+    elif algo_id == "DQN":
+        model = DQN("MlpPolicy", vec, device=settings.device, seed=seed, **hp)
+    elif algo_id == "SAC":
+        model = SAC("MlpPolicy", vec, device=settings.device, seed=seed, **hp)
+    else:
+        raise ValueError(f"Unknown algorithm: {algo_id}")
 
     model.learn(total_timesteps=total_steps, progress_bar=False)
 
@@ -115,6 +113,7 @@ def _sample_params(
 async def run_sweep(
     exp_id: str,
     env_id: str,
+    algo_id: str,
     total_steps: int,
     search_space: dict[str, dict],
     n_trials: int,
@@ -155,6 +154,7 @@ async def run_sweep(
             lambda trial: _objective(
                 trial,
                 env_id,
+                algo_id,
                 reward_id,
                 total_steps,
                 search_space,

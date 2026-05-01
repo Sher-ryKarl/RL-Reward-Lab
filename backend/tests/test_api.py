@@ -151,3 +151,51 @@ async def test_create_optimize_experiment(client: AsyncClient):
 async def test_get_optimization_nonexistent(client: AsyncClient):
     r = await client.get("/api/v1/experiments/nonexistent/optimization")
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_algos(client: AsyncClient):
+    r = await client.get("/api/v1/algos")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 3
+    ids = {a["algo_id"] for a in data}
+    assert ids == {"PPO", "DQN", "SAC"}
+    # Check DQN fields
+    dqn = [a for a in data if a["algo_id"] == "DQN"][0]
+    assert dqn["discrete"] is True
+    assert dqn["continuous"] is False
+    assert "buffer_size" in dqn["default_hp"]
+
+
+@pytest.mark.asyncio
+async def test_create_dqn_experiment(client: AsyncClient):
+    body = {
+        "name": "DQN Test",
+        "env_id": "MountainCar-v0",
+        "algo_id": "DQN",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {
+            "learning_rate": 1e-4,
+            "buffer_size": 10000,
+            "batch_size": 32,
+        },
+        "total_steps": 500,
+        "seeds": [0],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 202
+    data = r.json()
+    assert data["algo_id"] == "DQN"
+
+
+@pytest.mark.asyncio
+async def test_create_sac_rejected_for_discrete_env(client: AsyncClient):
+    """SAC is continuous-only, should be rejected for discrete MountainCar."""
+    # The API itself accepts the POST (schema validation passes),
+    # but validation should happen before training. For now just verify
+    # it's in the valid algo_id list.
+    from app.core.registry import algo_supports_env
+    assert algo_supports_env("SAC", "MountainCar-v0") is False
+    assert algo_supports_env("DQN", "MountainCar-v0") is True
+    assert algo_supports_env("PPO", "MountainCar-v0") is True

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db
+from app.core.registry import algo_supports_env
 from app.db.models import Experiment, Run as RunModel
 from app.schemas.api import (
     ExperimentCreate,
@@ -30,6 +31,16 @@ async def create_experiment(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
+    if not algo_supports_env(body.algo_id, body.env_id):
+        from app.core.registry import ENV_REGISTRY
+        env_meta = ENV_REGISTRY.get(body.env_id)
+        action = env_meta.action_space if env_meta else "unknown"
+        raise HTTPException(
+            400,
+            f"Algorithm '{body.algo_id}' does not support '{body.env_id}' "
+            f"({action} action space).",
+        )
+
     exp = Experiment(
         name=body.name,
         env_id=body.env_id,
@@ -55,7 +66,7 @@ async def create_experiment(
             body.search_space,
             body.n_trials,
             reward_id,
-            body.hyperparams.model_dump(),
+            body.hyperparams,
         )
         return _exp_to_summary(exp)
 
@@ -65,7 +76,7 @@ async def create_experiment(
                 experiment_id=exp.id,
                 reward_id=reward_id,
                 seed=seed,
-                hyperparams=body.hyperparams.model_dump(),
+                hyperparams=body.hyperparams,
                 status="pending",
             )
             db.add(run)
@@ -260,6 +271,7 @@ async def _execute_optimization(
             return
 
         env_id = exp.env_id
+        algo_id = exp.algo_id
         total_steps = exp.total_steps
 
         exp.status = "running"
@@ -269,6 +281,7 @@ async def _execute_optimization(
             await run_sweep(
                 exp_id=exp_id,
                 env_id=env_id,
+                algo_id=algo_id,
                 total_steps=total_steps,
                 search_space=search_space,
                 n_trials=n_trials,
