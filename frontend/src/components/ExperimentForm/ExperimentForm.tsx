@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type AlgoInfo, type EnvInfo, type RewardInfo, type ExperimentCreate } from "../../api/client";
+import { api, type AlgoInfo, type DemoInfo, type EnvInfo, type RewardInfo, type ExperimentCreate } from "../../api/client";
 import { EnvSelector } from "./EnvSelector";
 import { RewardMultiSelect } from "./RewardMultiSelect";
 import { HyperParamPanel } from "./HyperParamPanel";
@@ -25,6 +25,8 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
+  const [demos, setDemos] = useState<DemoInfo[]>([]);
+  const [demoId, setDemoId] = useState<string | null>(null);
 
   // Reset hyperparams when algo changes
   useEffect(() => {
@@ -32,7 +34,14 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
     if (algo) setHp({ ...algo.default_hp });
   }, [algoId, algos]);
 
+  // Fetch demos when envId changes (for BC demo selector)
+  useEffect(() => {
+    api.listDemos().then(setDemos).catch(() => setDemos([]));
+  }, [envId]);
+
   const selectedAlgo = algos.find((a) => a.algo_id === algoId);
+  const isBC = algoId === "BC";
+  const filteredDemos = demos.filter((d) => d.env_id === envId);
 
   const submit = async () => {
     if (rewardIds.length === 0) {
@@ -41,6 +50,10 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
     }
     if (optimize && Object.keys(searchSpace).length === 0) {
       setError("Optimization requires at least one search space dimension.");
+      return;
+    }
+    if (isBC && !demoId) {
+      setError("BC requires a demo to clone from. Collect one first or select an existing demo.");
       return;
     }
     setSubmitting(true);
@@ -56,6 +69,7 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
       optimize,
       search_space: searchSpace,
       n_trials: nTrials,
+      demo_id: isBC ? demoId : null,
     };
     try {
       await api.createExperiment(body);
@@ -129,10 +143,38 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
         </div>
       </fieldset>
 
+      {/* ── Demo Selector (BC only, v0.5) ─────────────────────────── */}
+      {isBC && (
+        <fieldset className="border rounded p-4 bg-indigo-50">
+          <legend className="text-sm font-semibold text-indigo-700">
+            Clone Source (Expert Demo)
+          </legend>
+          {filteredDemos.length === 0 ? (
+            <p className="text-xs text-gray-500 mt-2">
+              No demos available for {envId}. Run a PPO experiment first, then collect a demo from it.
+            </p>
+          ) : (
+            <select
+              value={demoId ?? ""}
+              onChange={(e) => setDemoId(e.target.value || null)}
+              className="border rounded px-2 py-1 text-sm mt-2 w-full"
+            >
+              <option value="">-- Select a demo --</option>
+              {filteredDemos.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.n_episodes} eps, {d.n_steps} steps)
+                </option>
+              ))}
+            </select>
+          )}
+        </fieldset>
+      )}
+
       <RewardMultiSelect rewards={rewards} selected={rewardIds} onChange={setRewardIds} />
       <HyperParamPanel hp={hp} onChange={setHp} algoId={algoId} />
 
-      {/* ── Optimization Toggle (v0.2) ──────────────────────────────── */}
+      {/* ── Optimization Toggle (v0.2, not for BC) ──────────────────── */}
+      {!isBC && (
       <div className="border rounded p-3 space-y-3 bg-gray-50">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -168,10 +210,13 @@ export function ExperimentForm({ envs, algos, rewards }: Props) {
           </>
         )}
       </div>
+      )}
 
       <div className="flex items-center gap-6">
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-semibold text-gray-700">Total Steps</span>
+          <span className="text-sm font-semibold text-gray-700">
+            {isBC ? "Training Batches" : "Total Steps"}
+          </span>
           <input
             type="number"
             value={totalSteps}

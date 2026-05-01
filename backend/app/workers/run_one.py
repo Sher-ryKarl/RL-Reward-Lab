@@ -17,11 +17,37 @@ import torch
 from stable_baselines3 import DQN, PPO, SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecVideoRecorder
+from imitation.algorithms import bc
+from imitation.data import serialize as im_serialize
 from app.config import settings
 from app.core.registry import ALGO_REGISTRY
 from app.rewards.variants import REWARD_REGISTRY
 from app.rewards.rnd import RNDCallback
 from app.workers.callbacks import StreamCallback
+
+
+class BCPolicyWrapper:
+    """Wraps an imitation-trained policy to expose the SB3 predict() interface."""
+
+    def __init__(self, policy, observation_space, action_space):
+        self.policy = policy
+        self.observation_space = observation_space
+        self.action_space = action_space
+
+    def predict(self, obs, deterministic=True):
+        obs_t = torch.as_tensor(obs, dtype=torch.float32)
+        single = obs_t.ndim == 1
+        if single:
+            obs_t = obs_t.unsqueeze(0)
+        with torch.no_grad():
+            actions = self.policy._predict(obs_t, deterministic=deterministic)
+        actions = actions.cpu().numpy()
+        if single:
+            actions = actions[0]
+        return actions, None
+
+    def save(self, path: str) -> None:
+        torch.save(self.policy.state_dict(), path)
 
 
 def run_one(
@@ -90,25 +116,45 @@ def run_one(
                 seed=seed,
                 **algo_hp,
             )
+        elif algo == "BC":
+            demo_path = algo_hp.pop("demo_path", None)
+            if not demo_path:
+                raise ValueError("BC requires demo_path in hyperparams")
+            trajectories = im_serialize.load(demo_path)
+            bc_trainer = bc.BC(
+                observation_space=vec.observation_space,
+                action_space=vec.action_space,
+                demonstrations=trajectories,
+                batch_size=algo_hp.pop("batch_size", 32),
+                l2_weight=algo_hp.pop("l2_weight", 1e-4),
+                optimizer_kwargs=algo_hp.pop("optimizer_kwargs", {"lr": 1e-3}),
+            )
+            bc_trainer.train(n_batches=total_steps)
+            model = BCPolicyWrapper(
+                bc_trainer.policy,
+                vec.observation_space,
+                vec.action_space,
+            )
         else:
             raise ValueError(f"Unknown algorithm: {algo}")
 
-        callback = StreamCallback(
-            queue, run_id=run_id, reward_id=reward_id, every=1000
-        )
-
-        # R3_curiosity_rnd: wire up RND intrinsic reward callback
-        cb_list = [callback]
-        if reward_id == "R3_curiosity_rnd":
-            rnd_cb = RNDCallback(
-                env=vec,
-                intrinsic_coef=0.1,
-                update_normalize=True,
-                verbose=1,
+        if algo != "BC":
+            callback = StreamCallback(
+                queue, run_id=run_id, reward_id=reward_id, every=1000
             )
-            cb_list.insert(0, rnd_cb)
 
-        model.learn(total_timesteps=total_steps, callback=cb_list)
+            # R3_curiosity_rnd: wire up RND intrinsic reward callback
+            cb_list = [callback]
+            if reward_id == "R3_curiosity_rnd":
+                rnd_cb = RNDCallback(
+                    env=vec,
+                    intrinsic_coef=0.1,
+                    update_normalize=True,
+                    verbose=1,
+                )
+                cb_list.insert(0, rnd_cb)
+
+            model.learn(total_timesteps=total_steps, callback=cb_list)
 
         # Save model
         model_path = Path(settings.data_dir) / "checkpoints" / f"{run_id}.zip"
@@ -131,7 +177,7 @@ def run_one(
         })
 
 
-def _record_replay(env_id: str, spec, model: PPO, run_id: str) -> Path | None:
+def _record_replay(env_id: str, spec, model, run_id: str) -> Path | None:
     """Record a 30s replay video using VecVideoRecorder."""
     try:
         eval_env = DummyVecEnv([

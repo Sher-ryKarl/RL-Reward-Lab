@@ -40,10 +40,21 @@ export interface AlgoInfo {
   default_hp: Record<string, unknown>;
 }
 
+export interface DemoInfo {
+  id: string;
+  name: string;
+  env_id: string;
+  reward_id: string | null;
+  source_run_id: string | null;
+  n_episodes: number;
+  n_steps: number;
+  created_at: string;
+}
+
 export interface ExperimentCreate {
   name: string;
   env_id: string;
-  algo_id: "PPO" | "DQN" | "SAC";
+  algo_id: "PPO" | "DQN" | "SAC" | "BC";
   reward_ids: string[];
   hyperparams: Record<string, unknown>;
   total_steps: number;
@@ -51,6 +62,7 @@ export interface ExperimentCreate {
   optimize?: boolean;
   search_space?: Record<string, Record<string, unknown>>;
   n_trials?: number;
+  demo_id?: string | null;
 }
 
 export interface TrialResult {
@@ -139,6 +151,21 @@ export const api = {
 
   cancelRun: (id: string) =>
     request<{ status: string }>(`/api/v1/runs/${id}`, { method: "DELETE" }),
+
+  // Demos (v0.5)
+  listDemos: () => request<DemoInfo[]>("/api/v1/demos"),
+
+  createDemo: (body: {
+    name: string;
+    env_id: string;
+    source_run_id: string;
+    n_episodes: number;
+    min_timesteps: number;
+  }) =>
+    request<DemoInfo>("/api/v1/demos", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // SSE stream — handled separately in stream.ts
   streamUrl: (runId: string) => `/api/v1/runs/${runId}/stream`,

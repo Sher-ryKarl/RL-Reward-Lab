@@ -158,9 +158,9 @@ async def test_list_algos(client: AsyncClient):
     r = await client.get("/api/v1/algos")
     assert r.status_code == 200
     data = r.json()
-    assert len(data) == 3
+    assert len(data) == 4
     ids = {a["algo_id"] for a in data}
-    assert ids == {"PPO", "DQN", "SAC"}
+    assert ids == {"PPO", "DQN", "SAC", "BC"}
     # Check DQN fields
     dqn = [a for a in data if a["algo_id"] == "DQN"][0]
     assert dqn["discrete"] is True
@@ -199,3 +199,53 @@ async def test_create_sac_rejected_for_discrete_env(client: AsyncClient):
     assert algo_supports_env("SAC", "MountainCar-v0") is False
     assert algo_supports_env("DQN", "MountainCar-v0") is True
     assert algo_supports_env("PPO", "MountainCar-v0") is True
+
+
+# ── BC & Demo tests (v0.5) ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_bc_experiment_requires_demo(client: AsyncClient):
+    body = {
+        "name": "BC No Demo",
+        "env_id": "MountainCar-v0",
+        "algo_id": "BC",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 500,
+        "seeds": [0],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 400
+    assert "demo_id" in r.text
+
+
+@pytest.mark.asyncio
+async def test_list_demos(client: AsyncClient):
+    r = await client.get("/api/v1/demos")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_create_demo_missing_source(client: AsyncClient):
+    body = {
+        "name": "Bad Demo",
+        "env_id": "MountainCar-v0",
+        "n_episodes": 10,
+        "min_timesteps": 1000,
+    }
+    r = await client.post("/api/v1/demos", json=body)
+    assert r.status_code == 400
+    assert "source_run_id" in r.text
+
+
+@pytest.mark.asyncio
+async def test_get_demo_nonexistent(client: AsyncClient):
+    r = await client.get("/api/v1/demos/nonexistent")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_demo_nonexistent(client: AsyncClient):
+    r = await client.delete("/api/v1/demos/nonexistent")
+    assert r.status_code == 404

@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.4.0 多算法开发中 |
-| 最后 Tag | `v0.2.0-alpha.1` |
+| 当前阶段 | v0.5.0 IRL/BC 开发中 |
+| 最后 Tag | `v0.4.0-alpha.1` |
 | 当前分支 | feature/multi-algo |
 | 最后提交 | — |
 
@@ -232,3 +232,33 @@
 - `device="cuda"` 下 PPO 产生 SB3 GPU warning（已知问题，训练正常进行）
 
 **下一步计划**: 端到端验证 DQN 训练链路 → v0.5 IRL/RLHF (imitation 集成)
+
+
+---
+
+### 2026-05-01 — Phase 8: v0.5 Behavioral Cloning (BC) + Demo Collection
+
+**完成工作**:
+- `backend/app/core/registry.py` — ALGO_REGISTRY 新增 BC（Behavioral Cloning），discrete=True, continuous=True, default_hp: batch_size/l2_weight/optimizer_kwargs
+- `backend/app/workers/collect_demo.py` — 新建：从已完成 PPO Run 的 checkpoint 收集专家轨迹，使用 `imitation.data.rollout.rollout()` + `serialize.save()` 输出 .npz 文件
+- `backend/app/api/routes/demos.py` — 新建：Demo CRUD API（GET list, POST create from source_run_id, GET detail, DELETE）
+- `backend/app/workers/run_one.py` — 新增 BC dispatch：加载 demo .npz → `bc.BC` 训练 → `BCPolicyWrapper` 包装（适配 `predict(obs, deterministic) → (actions, None)` 接口）；`_record_replay` 类型泛化
+- `backend/app/api/routes/experiments.py` — BC 实验创建校验：必须有 demo_id、demo 存在、demo env 匹配；`hyperparams` 增加 `demo_path` 透传
+- `backend/app/main.py` — 注册 demos router
+- `backend/app/schemas/api.py` — `algo_id` 扩展为 `Literal["PPO","DQN","SAC","BC"]`（前期已做）；DemoCreate/DemoSummary 已添加
+- `backend/app/db/models.py` — Demo ORM 模型已添加（前期已做）
+- `backend/tests/test_api.py` — 新增 5 个测试：test_create_bc_experiment_requires_demo / test_list_demos / test_create_demo_missing_source / test_get_demo_nonexistent / test_delete_demo_nonexistent
+- 测试矩阵：30/30 全部通过（11 reward + 19 API）
+- 前端 TypeScript 零错误，Vite build 通过
+- 前端 `client.ts` — 新增 DemoInfo 类型、listDemos/createDemo API、ExperimentCreate.algo_id 扩展 + demo_id 字段
+- 前端 `ExperimentForm.tsx` — BC 算法选项；BC 选中时显示 Demo 选择器（按 env_id 过滤）；优化面板 BC 时隐藏；total_steps 标签适配
+
+**设计决策**:
+- BC 不通过 `model.learn()` 训练，而是在 algo dispatch 块中直接 `bc_trainer.train(n_batches=total_steps)`
+- `BCPolicyWrapper` 调用底层 policy 的 `_predict()` 方法（imitation 内部 API），确保与 SB3 `predict()` 签名一致
+- `demo_id` 仅在 ExperimentCreate API schema 中存在，不存储到 Experiment DB 模型；demo_path 存入 Run.hyperparams（JSON）
+- Demo collection 必须在 source run 状态为 "done" 时进行，验证 checkpoint 文件存在
+
+**遇到的问题**: 无
+
+**下一步计划**: 端到端验证 BC 训练链路 → v0.6 其他功能（按优先级排序）

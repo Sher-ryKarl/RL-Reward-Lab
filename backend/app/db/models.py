@@ -53,3 +53,17 @@ class Run(Base):
     artifact_path: Mapped[str | None] = mapped_column(String(512), default=None)
 
     experiment: Mapped["Experiment"] = relationship(back_populates="runs")
+
+
+class Demo(Base):
+    __tablename__ = "demo"
+
+    id: Mapped[str] = mapped_column(String(12), primary_key=True, default=_new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    env_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    reward_id: Mapped[str | None] = mapped_column(String(32), default=None)
+    source_run_id: Mapped[str | None] = mapped_column(String(12), default=None)
+    n_episodes: Mapped[int] = mapped_column(default=0)
+    n_steps: Mapped[int] = mapped_column(default=0)
+    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

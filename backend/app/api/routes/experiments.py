@@ -41,6 +41,23 @@ async def create_experiment(
             f"({action} action space).",
         )
 
+    # BC requires a demo
+    hp = dict(body.hyperparams)
+    if body.algo_id == "BC":
+        if not body.demo_id:
+            raise HTTPException(400, "BC requires a demo_id (clone source)")
+        from app.db.models import Demo
+        demo_result = await db.execute(select(Demo).where(Demo.id == body.demo_id))
+        demo = demo_result.scalar_one_or_none()
+        if not demo:
+            raise HTTPException(404, f"Demo '{body.demo_id}' not found")
+        if demo.env_id != body.env_id:
+            raise HTTPException(
+                400,
+                f"Demo env '{demo.env_id}' does not match experiment env '{body.env_id}'",
+            )
+        hp["demo_path"] = demo.file_path
+
     exp = Experiment(
         name=body.name,
         env_id=body.env_id,
@@ -66,7 +83,7 @@ async def create_experiment(
             body.search_space,
             body.n_trials,
             reward_id,
-            body.hyperparams,
+            hp,
         )
         return _exp_to_summary(exp)
 
@@ -76,7 +93,7 @@ async def create_experiment(
                 experiment_id=exp.id,
                 reward_id=reward_id,
                 seed=seed,
-                hyperparams=body.hyperparams,
+                hyperparams=hp,
                 status="pending",
             )
             db.add(run)

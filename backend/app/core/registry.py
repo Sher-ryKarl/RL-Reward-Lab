@@ -105,6 +105,17 @@ ALGO_REGISTRY: dict[str, AlgoMeta] = {
             "use_sde": False,
         },
     ),
+    "BC": AlgoMeta(
+        algo_id="BC",
+        name="Behavioral Cloning",
+        discrete=True,
+        continuous=True,
+        default_hp={
+            "batch_size": 32,
+            "l2_weight": 1e-4,
+            "optimizer_kwargs": {"lr": 1e-3},
+        },
+    ),
 }
 
 

@@ -13,15 +13,40 @@ from pydantic import BaseModel, Field
 class ExperimentCreate(BaseModel):
     name: str = Field(default="Untitled")
     env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1"] = "MountainCar-v0"
-    algo_id: Literal["PPO", "DQN", "SAC"] = "PPO"
+    algo_id: Literal["PPO", "DQN", "SAC", "BC"] = "PPO"
     reward_ids: list[str] = Field(min_length=1, max_length=8)
     hyperparams: dict[str, Any] = Field(default_factory=dict)
     total_steps: int = Field(50_000, ge=100, le=2_000_000)
     seeds: list[int] = Field(default_factory=lambda: [0])
+    # v0.5: BC cloning source
+    demo_id: str | None = None
     # v0.2: Optional Optuna search
     optimize: bool = False
     search_space: dict = Field(default_factory=dict)
     n_trials: int = Field(30, ge=2, le=500)
+
+
+# ── Demo (v0.5) ────────────────────────────────────────────────────────────────
+
+class DemoCreate(BaseModel):
+    name: str = Field(default="Untitled Demo")
+    env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1"] = "MountainCar-v0"
+    source_run_id: str | None = None
+    n_episodes: int = Field(10, ge=1, le=100)
+    min_timesteps: int = Field(10_000, ge=100, le=500_000)
+
+
+class DemoSummary(BaseModel):
+    id: str
+    name: str
+    env_id: str
+    reward_id: str | None
+    source_run_id: str | None
+    n_episodes: int
+    n_steps: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ── Optimization / HPO (v0.2) ─────────────────────────────────────────────────
