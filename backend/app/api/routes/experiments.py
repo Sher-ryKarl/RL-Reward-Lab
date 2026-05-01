@@ -12,12 +12,19 @@ from app.api.deps import get_current_user, get_db
 from app.core.registry import algo_supports_env
 from app.db.models import Experiment, Run as RunModel
 from app.schemas.api import (
+    ALLOWED_OPS,
+    ALLOWED_OBJECTIVES,
+    ConstraintClause,
     ExperimentCreate,
     ExperimentList,
     ExperimentSummary,
+    ObjectiveRange,
     OptimizationResult,
+    ParetoRecommendRequest,
+    ParetoRecommendResponse,
     RunSummary,
     TrialResult,
+    TrialScore,
 )
 from app.workers.hpo import _compute_pareto_front, run_sweep
 from app.workers.scheduler import RUN_QUEUES, schedule_run
@@ -243,6 +250,164 @@ async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
         directions=["maximize", "minimize", "minimize"][:n_obj] if has_multi_objective else ["maximize"],
         pareto_front=pareto_front,
         n_objectives=n_obj,
+    )
+
+
+# ── Pareto Recommend (v1.2) ───────────────────────────────────────────────────
+
+
+@router.post("/{exp_id}/pareto/recommend", response_model=ParetoRecommendResponse)
+async def recommend_pareto(
+    exp_id: str,
+    body: ParetoRecommendRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Given user weights and constraints, return the best trial on the Pareto front."""
+    # Fetch experiment with runs
+    q = (
+        select(Experiment)
+        .options(selectinload(Experiment.runs))
+        .where(Experiment.id == exp_id)
+    )
+    result = await db.execute(q)
+    exp = result.scalar_one_or_none()
+    if not exp:
+        raise HTTPException(404, "Experiment not found")
+
+    trials = exp.runs
+    if not trials:
+        raise HTTPException(404, "No trials found for this experiment")
+
+    # Determine n_objectives from trial data
+    n_obj = 1
+    sample_fm = trials[0].final_metrics or {}
+    if sample_fm.get("wall_time") is not None:
+        n_obj = 2
+    if sample_fm.get("convergence_steps") is not None:
+        n_obj = 3
+
+    # Align weights to n_objectives
+    weights = list(body.weights[:n_obj]) if body.weights else [1.0 / n_obj] * n_obj
+    if len(weights) < n_obj:
+        weights += [0.0] * (n_obj - len(weights))
+    total_w = sum(weights)
+    if total_w == 0:
+        weights = [1.0 / n_obj] * n_obj
+    else:
+        weights = [w / total_w for w in weights]
+
+    # Validate constraints
+    for c in body.constraints:
+        if c.objective not in ALLOWED_OBJECTIVES:
+            raise HTTPException(400, f"Unknown objective: '{c.objective}'")
+        if c.op not in ALLOWED_OPS:
+            raise HTTPException(400, f"Invalid operator: '{c.op}'")
+
+    obj_keys = ["ep_rew_mean", "wall_time", "convergence_steps"][:n_obj]
+    directions_map = {"ep_rew_mean": "maximize", "wall_time": "minimize", "convergence_steps": "minimize"}
+
+    # Build trial data list
+    trial_data = []
+    for run in trials:
+        fm = run.final_metrics or {}
+        vals = []
+        for k in obj_keys:
+            vals.append(float(fm.get(k, 0.0)))
+        trial_data.append({
+            "run": run,
+            "values": vals,
+            "reward_id": run.reward_id,
+            "params": run.hyperparams or {},
+            "trial_number": run.seed,
+        })
+
+    # Apply constraints
+    def _satisfies(td: dict) -> bool:
+        for c in body.constraints:
+            idx = obj_keys.index(c.objective) if c.objective in obj_keys else -1
+            if idx == -1:
+                continue
+            v = td["values"][idx]
+            op = c.op
+            limit = c.value
+            if op == "<" and not (v < limit):
+                return False
+            if op == "<=" and not (v <= limit):
+                return False
+            if op == ">" and not (v > limit):
+                return False
+            if op == ">=" and not (v >= limit):
+                return False
+        return True
+
+    filtered = [td for td in trial_data if _satisfies(td)]
+    if not filtered:
+        return ParetoRecommendResponse(
+            recommended=None, score=0.0,
+            all_scores=[], normalization={},
+            n_filtered=0, n_total=len(trial_data),
+        )
+
+    # Min-max normalization (per objective, across filtered trials)
+    normalization: dict[str, ObjectiveRange] = {}
+    for i, k in enumerate(obj_keys):
+        vals = [td["values"][i] for td in filtered]
+        rng = ObjectiveRange(min=min(vals), max=max(vals))
+        normalization[k] = rng
+
+    # Normalize and score
+    scored: list[dict] = []
+    for td in filtered:
+        normed = []
+        for i, k in enumerate(obj_keys):
+            rng = normalization[k]
+            if rng.max == rng.min:
+                normed.append(0.5)  # all equal → neutral
+            elif directions_map[k] == "maximize":
+                normed.append((td["values"][i] - rng.min) / (rng.max - rng.min))
+            else:
+                normed.append((rng.max - td["values"][i]) / (rng.max - rng.min))
+        score = sum(w * v for w, v in zip(weights, normed)) / sum(weights) if sum(weights) > 0 else 0
+        scored.append({**td, "normed": normed, "score": score})
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    best = scored[0]
+
+    # Build recommended TrialResult
+    fm = best["run"].final_metrics or {}
+    o1 = float(fm.get("ep_rew_mean", 0.0))
+    o2 = fm.get("wall_time")
+    o3 = fm.get("convergence_steps")
+    recommended_values = [float(o1)]
+    if o2 is not None:
+        recommended_values.append(float(o2))
+    if o3 is not None:
+        recommended_values.append(float(o3))
+
+    recommended = TrialResult(
+        number=best["trial_number"],
+        value=float(o1),
+        values=recommended_values,
+        params=best["params"],
+        reward_id=best["reward_id"],
+    )
+
+    all_scores = [
+        TrialScore(
+            trial_number=s["trial_number"],
+            score=round(s["score"], 4),
+            weighted_values=[round(v, 4) for v in s["normed"]],
+        )
+        for s in scored
+    ]
+
+    return ParetoRecommendResponse(
+        recommended=recommended,
+        score=round(best["score"], 4),
+        all_scores=all_scores,
+        normalization=normalization,
+        n_filtered=len(filtered),
+        n_total=len(trial_data),
     )
 
 

@@ -112,6 +112,39 @@ export interface OptimizationResult {
   n_objectives: number;
 }
 
+// ── Pareto Recommend (v1.2) ─────────────────────────────────────────────────
+
+export interface ConstraintClause {
+  objective: string;
+  op: string;
+  value: number;
+}
+
+export interface ParetoRecommendRequest {
+  weights: number[];
+  constraints: ConstraintClause[];
+}
+
+export interface TrialScore {
+  trial_number: number;
+  score: number;
+  weighted_values: number[];
+}
+
+export interface ObjectiveRange {
+  min: number;
+  max: number;
+}
+
+export interface ParetoRecommendResponse {
+  recommended: TrialResult | null;
+  score: number;
+  all_scores: TrialScore[];
+  normalization: Record<string, ObjectiveRange>;
+  n_filtered: number;
+  n_total: number;
+}
+
 export interface RunSummary {
   id: string;
   reward_id: string;
@@ -228,6 +261,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // Pareto recommend (v1.2)
+  recommendPareto: (id: string, body: ParetoRecommendRequest) =>
+    request<ParetoRecommendResponse>(
+      `/api/v1/experiments/${id}/pareto/recommend`,
+      { method: "POST", body: JSON.stringify(body) }
+    ),
 
   // SSE stream — handled separately in stream.ts
   streamUrl: (runId: string) => `/api/v1/runs/${runId}/stream`,

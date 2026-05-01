@@ -80,6 +80,49 @@ class OptimizationResult(BaseModel):
     n_objectives: int = 1
 
 
+# ── Pareto Recommend (v1.2) ────────────────────────────────────────────────────
+
+ALLOWED_OPS = {"<", ">", "<=", ">="}
+ALLOWED_OBJECTIVES = {"ep_rew_mean", "wall_time", "convergence_steps"}
+
+
+class ConstraintClause(BaseModel):
+    objective: str
+    op: str
+    value: float
+
+    @property
+    def is_valid(self) -> bool:
+        return self.objective in ALLOWED_OBJECTIVES and self.op in ALLOWED_OPS
+
+
+class ParetoRecommendRequest(BaseModel):
+    weights: list[float] = Field(default_factory=lambda: [0.5, 0.3, 0.2])
+    constraints: list[ConstraintClause] = Field(default_factory=list)
+
+
+class TrialScore(BaseModel):
+    trial_number: int
+    score: float
+    weighted_values: list[float]
+
+
+class ObjectiveRange(BaseModel):
+    min: float
+    max: float
+
+
+class ParetoRecommendResponse(BaseModel):
+    recommended: TrialResult | None
+    score: float
+    all_scores: list[TrialScore] = Field(default_factory=list)
+    normalization: dict[str, ObjectiveRange] = Field(default_factory=dict)
+    n_filtered: int
+    n_total: int
+
+
+# ── Run / Experiment ──────────────────────────────────────────────────────────
+
 class RunSummary(BaseModel):
     id: str
     reward_id: str

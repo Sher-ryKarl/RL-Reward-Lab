@@ -1,10 +1,12 @@
 import ReactECharts from "echarts-for-react";
-import type { TrialResult } from "../../api/client";
+import type { TrialResult, TrialScore } from "../../api/client";
 
 interface Props {
   trials: TrialResult[];
   paretoFront: TrialResult[];
   nObjectives: number;
+  highlightedTrial?: TrialResult | null;
+  scores?: TrialScore[];
 }
 
 const REWARD_COLORS = [
@@ -26,7 +28,7 @@ function rewardName(rid: string): string {
   return short[rid] || rid.substring(0, 8);
 }
 
-export function ParetoChart({ trials, paretoFront, nObjectives }: Props) {
+export function ParetoChart({ trials, paretoFront, nObjectives, highlightedTrial, scores: _scores }: Props) {
   if (nObjectives < 2 || trials.length === 0) {
     return (
       <div className="border rounded p-4">
@@ -83,6 +85,20 @@ export function ParetoChart({ trials, paretoFront, nObjectives }: Props) {
     }
     return items;
   });
+
+  // Highlighted / recommended trial
+  if (highlightedTrial && highlightedTrial.values.length >= 2) {
+    scatterSeries.push({
+      name: "★ Recommended",
+      type: "scatter",
+      data: [[highlightedTrial.values[1], highlightedTrial.values[0]]],
+      symbolSize: 22,
+      symbol: "diamond",
+      itemStyle: { color: "#f59e0b", borderColor: "#92400e", borderWidth: 2 },
+      emphasis: { scale: 1.3 },
+      zlevel: 10,
+    });
+  }
 
   // Pareto front connecting line (sorted by O1 descending)
   const paretoLine = paretoFront

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import ReactEChartsCore from "echarts-for-react";
-import type { OptimizationResult } from "../../api/client";
+import type { OptimizationResult, ParetoRecommendResponse } from "../../api/client";
 import { ParetoChart } from "./ParetoChart";
+import { ParetoWeightPanel } from "./ParetoWeightPanel";
 
 interface Props {
   data: OptimizationResult;
@@ -12,6 +14,8 @@ const REWARD_COLORS = [
 ];
 
 export function OptimizationCharts({ data }: Props) {
+  const [recommend, setRecommend] = useState<ParetoRecommendResponse | null>(null);
+
   if (data.trials.length === 0) {
     return (
       <div className="text-center text-gray-500 py-8 text-sm">
@@ -212,11 +216,18 @@ export function OptimizationCharts({ data }: Props) {
         </div>
       )}
 
+      {/* Pareto decision assistant (v1.2) */}
+      {data.n_objectives >= 2 && (
+        <ParetoWeightPanel data={data} onRecommend={setRecommend} />
+      )}
+
       {/* Pareto frontier (v1.1 multi-objective) */}
       <ParetoChart
         trials={data.trials}
         paretoFront={data.pareto_front}
         nObjectives={data.n_objectives}
+        highlightedTrial={recommend?.recommended}
+        scores={recommend?.all_scores}
       />
 
       {/* Trial history table */}

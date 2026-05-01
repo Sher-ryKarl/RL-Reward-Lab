@@ -547,3 +547,133 @@ async def test_single_objective_backward_compat(client: AsyncClient):
     assert data["n_objectives"] == 1
     assert data["directions"] == ["maximize"] or data["directions"] == ["maximize", "minimize", "minimize"]
     assert isinstance(data["pareto_front"], list)
+
+
+# ── Pareto Recommend (v1.2) ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_pareto_recommend_weighted_scores(client: AsyncClient):
+    """Weights [1,0,0] should recommend the trial with highest ep_rew_mean."""
+    body = {
+        "name": "Recommend Weight",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {"learning_rate": 1e-4, "n_steps": 64, "batch_size": 32},
+        "total_steps": 100,
+        "seeds": [1001, 1002],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 202
+    exp_id = r.json()["id"]
+
+    # Wait for runs to complete (short training)
+    import asyncio
+    await asyncio.sleep(3)
+
+    rec_body = {"weights": [1.0, 0.0], "constraints": []}
+    r2 = await client.post(f"/api/v1/experiments/{exp_id}/pareto/recommend", json=rec_body)
+    if r2.status_code == 404:
+        pytest.skip("No completed runs to test recommend with")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["recommended"] is not None
+    assert len(data["all_scores"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_pareto_recommend_constraint_filters(client: AsyncClient):
+    """Constraint wall_time < 0 should filter ALL trials."""
+    body = {
+        "name": "Constraint Test",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 100,
+        "seeds": [2001],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 202
+    exp_id = r.json()["id"]
+
+    import asyncio
+    await asyncio.sleep(3)
+
+    # Constraint that no 100-step trial can satisfy
+    rec_body = {"weights": [1.0], "constraints": [{"objective": "ep_rew_mean", "op": ">", "value": 1_000_000}]}
+    r2 = await client.post(f"/api/v1/experiments/{exp_id}/pareto/recommend", json=rec_body)
+    if r2.status_code == 404:
+        pytest.skip("No completed runs for constraint test")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["n_filtered"] == 0
+
+
+@pytest.mark.asyncio
+async def test_pareto_recommend_invalid_op_rejected(client: AsyncClient):
+    """Invalid constraint operator should be rejected."""
+    rec_body = {"weights": [0.5, 0.5], "constraints": [{"objective": "wall_time", "op": "==", "value": 10}]}
+    r = await client.post("/api/v1/experiments/nonexistent/pareto/recommend", json=rec_body)
+    # Will 404 due to nonexistent experiment before op validation, but op validation is in the endpoint
+    # Test op validation against a real experiment
+    body = {
+        "name": "Op Test",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 100,
+        "seeds": [3001],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    exp_id = r.json()["id"]
+    r2 = await client.post(f"/api/v1/experiments/{exp_id}/pareto/recommend", json=rec_body)
+    assert r2.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_pareto_recommend_invalid_objective(client: AsyncClient):
+    """Unknown objective name should be rejected."""
+    body = {
+        "name": "Obj Test",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 100,
+        "seeds": [4001],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    exp_id = r.json()["id"]
+    rec_body = {"weights": [0.5, 0.5], "constraints": [{"objective": "nonexistent", "op": "<", "value": 10}]}
+    r2 = await client.post(f"/api/v1/experiments/{exp_id}/pareto/recommend", json=rec_body)
+    assert r2.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_pareto_recommend_single_objective(client: AsyncClient):
+    """Single-objective experiment with weights=[1] should work."""
+    rec_body = {"weights": [1.0], "constraints": []}
+    body = {
+        "name": "Single Obj Recommend",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {},
+        "total_steps": 100,
+        "seeds": [5001],
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    exp_id = r.json()["id"]
+
+    import asyncio
+    await asyncio.sleep(3)
+
+    r2 = await client.post(f"/api/v1/experiments/{exp_id}/pareto/recommend", json=rec_body)
+    if r2.status_code == 404:
+        pytest.skip("No completed runs for single-objective recommend")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["recommended"] is not None

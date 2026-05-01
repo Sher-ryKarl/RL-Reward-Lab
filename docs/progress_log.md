@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v1.1.0-alpha.1 NSGA-II 多目标优化 |
-| 最后 Tag | `v1.1.0-alpha.1` |
+| 当前阶段 | v1.2.0-alpha.1 交互式 Pareto 权重调整 + 约束优化 |
+| 最后 Tag | `v1.2.0-alpha.1` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -544,3 +544,48 @@
 - Pareto 非支配排序单元测试覆盖：标准 4 trial 场景、单 trial、全相等 ✓
 
 **下一步计划**: v1.2 候选方向：交互式 Pareto 权重调整 / 约束优化（training_time < 5min）/ 多奖励 HPO + 多目标深度结合
+
+
+---
+
+### 2026-05-01 — Phase 16: v1.2.0-alpha.1 交互式 Pareto 权重 + 约束优化
+
+**完成工作**:
+- `backend/app/schemas/api.py` — 新增 6 个 Schema：`ConstraintClause`（objective/op/value + is_valid 校验）、`ParetoRecommendRequest`（weights + constraints）、`ParetoRecommendResponse`（recommended/score/all_scores/normalization/n_filtered/n_total）、`TrialScore`、`ObjectiveRange`；操作符白名单 `ALLOWED_OPS = {"<", ">", "<=", ">="}`
+- `backend/app/api/routes/experiments.py` — 新增 `POST /{id}/pareto/recommend` 端点（122 行）：
+  - 从 Run 记录提取多目标 values，自动检测 n_objectives
+  - 约束过滤：op 白名单校验，支持 `<`, `>`, `<=`, `>=` 四种操作符
+  - Min-max 归一化每条目标到 [0,1]（最大化目标正向归一化，最小化目标逆向归一化）
+  - 加权得分 = Σ(w_i × normalized_i) / Σ(w_i)
+  - 返回值包含推荐 trial、全部排序得分、归一化参数
+  - 边缘情况：全 0 权重 → 默认均匀权重；约束后无 trial → n_filtered=0
+- `frontend/src/api/client.ts` — 新增 5 个类型：`ConstraintClause`、`ParetoRecommendRequest`、`TrialScore`、`ObjectiveRange`、`ParetoRecommendResponse`；新增 `recommendPareto()` API
+- `frontend/src/components/MonitorPanel/ParetoWeightPanel.tsx` (NEW, ~180 行) — 交互式决策面板：
+  - 3 × range 滑块（最终奖励/训练速度/收敛速度），权重总和自动归一化
+  - 约束构建器：objective 下拉 + op 下拉 + value 输入 + ✕ 删除按钮 + "Add Constraint" 按钮
+  - 推荐详情卡片：★ Recommended Trial #N + Score + 奖励函数 + 各目标值 + 超参
+  - 300ms debounce 避免滑块拖拽 API 风暴
+  - 约束过滤后无数据时提示"放宽约束"
+  - 未达 baseline 的 convergence_steps 附注说明
+- `frontend/src/components/MonitorPanel/ParetoChart.tsx` — 新增 `highlightedTrial`/`scores` Props；推荐 trial 以金色菱形 ★ 标记在散点图上
+- `frontend/src/components/MonitorPanel/OptimizationCharts.tsx` — 集成 ParetoWeightPanel（多目标时渲染在 Pareto 散点图上方），传递推荐结果到 ParetoChart
+- `backend/tests/test_api.py` — 新增 5 个测试：权重评分、约束过滤（ep_rew_mean > 1M = 全过滤）、非法操作符拒绝（== → 400）、非法目标拒绝、单目标向后兼容
+- 测试矩阵：55/55 全部通过（50 → 55 测试）
+- 前端 TypeScript 零错误，Vite production build 通过
+
+**设计决策**:
+- 推荐逻辑纯后处理（hpo.py 零变更），完全解耦实验主流程
+- 约束过滤先于归一化，避免异常值影响 min/max 计算
+- Min-max 归一化 + 加权求和：简单、可解释、无需额外依赖
+- 全等指标（max==min）归一化到 0.5，避免除零
+- 前端操作符限制为 `<`, `>`, `<=`, `>=` 下拉选择（非自由文本），后端加白名单双重校验
+
+**遇到的问题**:
+- 约束测试初版使用 `wall_time < 0` 过滤：pending run 的 wall_time 为 None，导致 n_obj=1、constraint 静默跳过。改用 `ep_rew_mean > 1M`（O1 永远存在）解决。
+
+**端到端验证结果**:
+- 55/55 测试全部通过 ✓
+- 前端 TypeScript 零错误，Vite build 成功 ✓
+- 5 个推荐端点测试覆盖：权重评分、约束过滤、非法操作符拒绝、非法目标拒绝、单目标兼容 ✓
+
+**下一步计划**: v1.3 候选方向：速率限制 / ECharts 前端性能优化 / 多用户支持
