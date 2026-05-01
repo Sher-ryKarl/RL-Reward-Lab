@@ -30,7 +30,7 @@ async def test_list_envs(client: AsyncClient):
     r = await client.get("/api/v1/envs")
     assert r.status_code == 200
     data = r.json()
-    assert len(data) == 2
+    assert len(data) == 4
     env_ids = {e["env_id"] for e in data}
     assert "MountainCar-v0" in env_ids
     assert "CartPole-v1" in env_ids
@@ -116,4 +116,38 @@ async def test_get_nonexistent_run(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_stream_nonexistent_run(client: AsyncClient):
     r = await client.get("/api/v1/runs/nonexistent/stream")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_optimize_experiment(client: AsyncClient):
+    body = {
+        "name": "HPO Test",
+        "env_id": "MountainCar-v0",
+        "algo_id": "PPO",
+        "reward_ids": ["R0_sparse"],
+        "hyperparams": {
+            "learning_rate": 3e-4,
+            "n_steps": 128,
+            "batch_size": 32,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "ent_coef": 0.0,
+            "clip_range": 0.2,
+        },
+        "total_steps": 100,
+        "seeds": [0],
+        "optimize": True,
+        "search_space": {"learning_rate": {"type": "loguniform", "low": 1e-6, "high": 1.0}},
+        "n_trials": 5,
+    }
+    r = await client.post("/api/v1/experiments", json=body)
+    assert r.status_code == 202
+    data = r.json()
+    assert data["status"] in ("pending", "running")
+
+
+@pytest.mark.asyncio
+async def test_get_optimization_nonexistent(client: AsyncClient):
+    r = await client.get("/api/v1/experiments/nonexistent/optimization")
     assert r.status_code == 404

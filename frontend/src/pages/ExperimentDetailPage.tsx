@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, type ExperimentSummary } from "../api/client";
+import { api, type ExperimentSummary, type OptimizationResult } from "../api/client";
 import { MonitorPanel } from "../components/MonitorPanel/MonitorPanel";
 import { ReplayViewer } from "../components/ReplayViewer/ReplayViewer";
+import { OptimizationCharts } from "../components/MonitorPanel/OptimizationCharts";
 
 export function ExperimentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [exp, setExp] = useState<ExperimentSummary | null>(null);
+  const [optResult, setOptResult] = useState<OptimizationResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<string | null>(null);
@@ -14,9 +16,14 @@ export function ExperimentDetailPage() {
   useEffect(() => {
     if (!id) return;
     const poll = () => {
-      api
-        .getExperiment(id)
-        .then(setExp)
+      Promise.all([
+        api.getExperiment(id),
+        api.getOptimization(id).catch(() => null),
+      ])
+        .then(([expData, optData]) => {
+          setExp(expData);
+          setOptResult(optData);
+        })
         .catch((e) => setError(String(e)))
         .finally(() => setLoading(false));
     };
@@ -83,6 +90,16 @@ export function ExperimentDetailPage() {
           </button>
         ))}
       </div>
+
+      {/* Optimization results (v0.2) */}
+      {optResult && optResult.trials.length > 0 && (
+        <div className="border border-purple-200 rounded p-4 bg-purple-50/50">
+          <h3 className="text-sm font-semibold text-purple-800 mb-3">
+            Optuna Hyperparameter Search — {optResult.n_trials} trials
+          </h3>
+          <OptimizationCharts data={optResult} />
+        </div>
+      )}
 
       {/* Monitor / Replay for active run */}
       {activeRun ? (

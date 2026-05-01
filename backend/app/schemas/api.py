@@ -24,12 +24,33 @@ class PPOHyper(BaseModel):
 
 class ExperimentCreate(BaseModel):
     name: str = Field(default="Untitled")
-    env_id: Literal["MountainCar-v0", "CartPole-v1"] = "MountainCar-v0"
+    env_id: Literal["MountainCar-v0", "CartPole-v1", "LunarLander-v2", "Acrobot-v1"] = "MountainCar-v0"
     algo_id: Literal["PPO"] = "PPO"
     reward_ids: list[str] = Field(min_length=1, max_length=8)
     hyperparams: PPOHyper = PPOHyper()
     total_steps: int = Field(50_000, ge=100, le=2_000_000)
     seeds: list[int] = Field(default_factory=lambda: [0])
+    # v0.2: Optional Optuna search
+    optimize: bool = False
+    search_space: dict = Field(default_factory=dict)
+    n_trials: int = Field(30, ge=2, le=500)
+
+
+# ── Optimization / HPO (v0.2) ─────────────────────────────────────────────────
+
+class TrialResult(BaseModel):
+    number: int
+    value: float
+    params: dict
+
+
+class OptimizationResult(BaseModel):
+    experiment_id: str
+    n_trials: int
+    best_value: float | None
+    best_params: dict
+    trials: list[TrialResult]
+    status: str
 
 
 class RunSummary(BaseModel):

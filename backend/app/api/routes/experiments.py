@@ -14,8 +14,11 @@ from app.schemas.api import (
     ExperimentCreate,
     ExperimentList,
     ExperimentSummary,
+    OptimizationResult,
     RunSummary,
+    TrialResult,
 )
+from app.workers.hpo import run_sweep
 from app.workers.scheduler import RUN_QUEUES, schedule_run
 
 router = APIRouter(prefix="/api/v1/experiments", tags=["experiments"])
@@ -37,6 +40,25 @@ async def create_experiment(
     db.add(exp)
     await db.flush()
 
+    if body.optimize:
+        # HPO mode: trials create Run records as they complete
+        await db.commit()
+        result = await db.execute(
+            select(Experiment).options(selectinload(Experiment.runs)).where(Experiment.id == exp.id)
+        )
+        exp = result.scalar_one()
+
+        reward_id = body.reward_ids[0]
+        background_tasks.add_task(
+            _execute_optimization,
+            exp.id,
+            body.search_space,
+            body.n_trials,
+            reward_id,
+            body.hyperparams.model_dump(),
+        )
+        return _exp_to_summary(exp)
+
     for reward_id in body.reward_ids:
         for seed in body.seeds:
             run = RunModel(
@@ -49,7 +71,6 @@ async def create_experiment(
             db.add(run)
 
     await db.commit()
-    # Reload with runs eagerly loaded
     result = await db.execute(
         select(Experiment).options(selectinload(Experiment.runs)).where(Experiment.id == exp.id)
     )
@@ -97,6 +118,43 @@ async def get_experiment(exp_id: str, db: AsyncSession = Depends(get_db)):
     if not exp:
         raise HTTPException(404, "Experiment not found")
     return _exp_to_summary(exp)
+
+
+@router.get("/{exp_id}/optimization", response_model=OptimizationResult)
+async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
+    q = (
+        select(Experiment)
+        .options(selectinload(Experiment.runs))
+        .where(Experiment.id == exp_id)
+    )
+    result = await db.execute(q)
+    exp = result.scalar_one_or_none()
+    if not exp:
+        raise HTTPException(404, "Experiment not found")
+
+    trials: list[TrialResult] = []
+    best_value: float | None = None
+    best_params: dict = {}
+    for run in exp.runs:
+        value = run.final_metrics.get("ep_rew_mean") if run.final_metrics else None
+        trial = TrialResult(
+            number=run.seed,
+            value=value or 0.0,
+            params=run.hyperparams or {},
+        )
+        trials.append(trial)
+        if value is not None and (best_value is None or value > best_value):
+            best_value = value
+            best_params = run.hyperparams or {}
+
+    return OptimizationResult(
+        experiment_id=exp.id,
+        n_trials=len(trials),
+        best_value=best_value,
+        best_params=best_params,
+        trials=trials,
+        status=exp.status,
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,3 +237,53 @@ async def _execute_experiment(exp_id: str) -> None:
         if statuses <= {"done", "failed", "cancelled"}:
             exp.status = "done" if "failed" not in statuses else "partial"
             await db.commit()
+
+
+async def _execute_optimization(
+    exp_id: str,
+    search_space: dict,
+    n_trials: int,
+    reward_id: str,
+    fixed_hp: dict,
+) -> None:
+    """Background task: run Optuna HPO sweep. run_sweep handles Run records and status."""
+    from app.db.database import async_session
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(Experiment)
+            .options(selectinload(Experiment.runs))
+            .where(Experiment.id == exp_id)
+        )
+        exp = result.scalar_one_or_none()
+        if not exp:
+            return
+
+        env_id = exp.env_id
+        total_steps = exp.total_steps
+
+        exp.status = "running"
+        await db.commit()
+
+        try:
+            await run_sweep(
+                exp_id=exp_id,
+                env_id=env_id,
+                total_steps=total_steps,
+                search_space=search_space,
+                n_trials=n_trials,
+                reward_id=reward_id,
+                fixed_hp=fixed_hp,
+            )
+        except Exception as exc:
+            import traceback
+
+            print(f"[ERROR] Optimization {exp_id} failed: {exc}")
+            traceback.print_exc()
+            result = await db.execute(
+                select(Experiment).where(Experiment.id == exp_id)
+            )
+            exp = result.scalar_one_or_none()
+            if exp:
+                exp.status = "failed"
+                await db.commit()

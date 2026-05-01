@@ -50,6 +50,24 @@ export interface ExperimentCreate {
   hyperparams: PPOHyper;
   total_steps: number;
   seeds: number[];
+  optimize?: boolean;
+  search_space?: Record<string, Record<string, unknown>>;
+  n_trials?: number;
+}
+
+export interface TrialResult {
+  number: number;
+  value: number;
+  params: Record<string, unknown>;
+}
+
+export interface OptimizationResult {
+  experiment_id: string;
+  n_trials: number;
+  best_value: number | null;
+  best_params: Record<string, unknown>;
+  trials: TrialResult[];
+  status: string;
 }
 
 export interface RunSummary {
@@ -111,6 +129,9 @@ export const api = {
 
   getExperiment: (id: string) =>
     request<ExperimentSummary>(`/api/v1/experiments/${id}`),
+
+  getOptimization: (id: string) =>
+    request<OptimizationResult>(`/api/v1/experiments/${id}/optimization`),
 
   // Runs
   getRun: (id: string) => request<RunSummary>(`/api/v1/runs/${id}`),
