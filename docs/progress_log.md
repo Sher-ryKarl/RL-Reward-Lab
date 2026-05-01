@@ -4,9 +4,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.3.0 多环境开发中 |
-| 最后 Tag | `v0.1.0` |
-| 当前分支 | feature/optuna-hpo |
+| 当前阶段 | v0.4.0 多算法开发中 |
+| 最后 Tag | `v0.2.0-alpha.1` |
+| 当前分支 | feature/multi-algo |
 | 最后提交 | — |
 
 ### 待解决问题
@@ -199,3 +199,36 @@
 **遇到的问题**: 无
 
 **下一步计划**: 端到端验证（在所有 4 个环境中测试训练链路）→ v0.4 多算法 (DQN/SAC) + GPU
+
+
+---
+
+### 2026-05-01 — Phase 7: v0.4 多算法 (DQN/SAC) + GPU
+
+**完成工作**:
+- `backend/app/config.py` — `device` 改为 `torch.cuda.is_available()` 自动检测（GPU/CPU），本机检测到 CUDA
+- `backend/app/core/registry.py` — ALGO_REGISTRY 新增 DQN (discrete-only) 和 SAC (continuous-only)，含完整 `default_hp`
+- `backend/app/schemas/api.py` — `algo_id` 扩展为 `Literal["PPO","DQN","SAC"]`；`hyperparams` 从 `PPOHyper` 改为 `dict[str,Any]`（Pydantic 验证 + algo-agnostic）
+- `backend/app/api/routes/algos.py` — 新建 `/api/v1/algos` 端点，返回算法元数据 + 默认超参
+- `backend/app/api/routes/experiments.py` — POST 增加 `algo_supports_env()` 校验（不兼容算法返回 400）；`_execute_optimization` 传递 `algo_id`
+- `backend/app/workers/run_one.py` — 算法 dispatch：PPO/DQN/SAC，用户 hp 与 algo default_hp 合并
+- `backend/app/workers/hpo.py` — `_objective` 算法 dispatch；`run_sweep` 接收 `algo_id`
+- `backend/app/main.py` — 注册 algos router
+- `frontend/src/api/client.ts` — +`AlgoInfo` 类型、`ExperimentCreate.algo_id` 扩展为 union、+`listAlgos()`
+- `frontend/src/components/ExperimentForm/HyperParamPanel.tsx` — 重写为通用动态渲染器，根据 algo 自动生成字段
+- `frontend/src/components/ExperimentForm/ExperimentForm.tsx` — 新增算法选择器（radio buttons，不兼容环境自动灰选）；algo 切换时 hp 自动重置为 default_hp
+- `frontend/src/pages/NewExperimentPage.tsx` — fetch algos 并传入 ExperimentForm
+- `backend/tests/test_api.py` — 新增 3 个测试：`test_list_algos`、`test_create_dqn_experiment`、`test_create_sac_rejected_for_discrete_env`
+- 测试矩阵：25/25 全部通过
+- 前端 TypeScript 零错误，Vite build 通过
+
+**设计决策**:
+- `hyperparams` 从强类型 `PPOHyper` 改为 `dict[str,Any]`：随算法增多，单一 Hyper 模型无法维护。后端合并 default_hp + 用户 hp，SB3 自行校验参数合法性
+- SAC 当前无可用环境（4 个 env 均为 discrete），通过 `algo_supports_env` 在 POST 时拒绝，前端 UI 同时灰选。为后续 v0.5+ 连续环境预留
+- GPU 自动检测：`torch.cuda.is_available()` → `"cuda"` else `"cpu"`。PPO + GPU 会产生 SB3 已知 warning，不影响训练
+
+**遇到的问题**:
+- `hpo.py` 首次端到端验证时缺少 `select` 导入（已于上一阶段修复）
+- `device="cuda"` 下 PPO 产生 SB3 GPU warning（已知问题，训练正常进行）
+
+**下一步计划**: 端到端验证 DQN 训练链路 → v0.5 IRL/RLHF (imitation 集成)
