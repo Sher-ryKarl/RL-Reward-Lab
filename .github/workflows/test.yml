@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start backend
+        run: docker compose up -d backend
+
+      - name: Run tests
+        run: docker compose exec -T backend uv run pytest backend/tests/ -q
+
+      - name: Cleanup
+        run: docker compose down
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build frontend
+        run: |
+          docker build -t rl-lab-frontend ./frontend
+          docker run --rm rl-lab-frontend echo "Build OK"

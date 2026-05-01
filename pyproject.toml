@@ -24,6 +24,8 @@ dependencies = [
     "aiosqlite>=0.20.0",
     # Experiment Tracking
     "mlflow>=3.7.0",
+    # Hyperparameter Optimization (v0.2+)
+    "optuna>=3.6",
     # Config
     "omegaconf>=2.3.0",
     # Utilities

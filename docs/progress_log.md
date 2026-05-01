@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.9.0 多奖励 Optuna HPO |
-| 最后 Tag | `v0.9.0-alpha.1` |
+| 当前阶段 | v1.0.0 Docker 部署 + CI + 文档 |
+| 最后 Tag | `v1.0.0-alpha.1` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -16,7 +16,9 @@
 3. RND 内在奖励在实机上的调参数值（β 系数）需要实验校准
 4. v0.2 Optuna HPO 端到端训练验证（需实机运行一次完整 sweep）
 5. v0.3 新环境（LunarLander/Acrobot）端到端训练验证
-6. Docker 方案待 v0.4
+6. ~~Docker 方案~~ (v1.0.0 已完成)
+7. 前端回放页视频加载端到端浏览器验证
+8. Replay 视频录制在 Docker 容器内验证
 
 ### 恢复上下文需读取的文件
 
@@ -412,3 +414,40 @@
 - 前端 TypeScript 0 错误，Vite build 成功 ✓
 
 **下一步计划**: v0.10 候选方向：Docker 部署 / 前端回放页视频加载彻底修复 / 多目标 Optuna (NSGA-II + Pareto)
+
+
+---
+
+### 2026-05-01 — Phase 13: v1.0.0 Docker 部署 + CI + 文档
+
+**完成工作**:
+- `backend/Dockerfile` — python:3.10-slim 基础镜像，预装 OpenGL 库（libgl1-mesa-glx 等，SB3 视频录制需要），pip install requirements.txt，CMD uvicorn
+- `frontend/Dockerfile` — 多阶段构建：Node 20 Alpine `npm run build` → Nginx Alpine serve 静态文件
+- `frontend/nginx.conf` — SPA fallback（try_files $uri /index.html）、`/api/` 反向代理到 backend:8000、SSE 长连接调优（proxy_buffering off、proxy_read_timeout 3600s）
+- `docker-compose.yml` — backend (port 8000, volume ./data:/app/data) + frontend (port 80, depends_on backend)
+- `.env.example` — 全部 RL_LAB_* 环境变量文档化
+- `.dockerignore` — 3 文件（root/backend/frontend），排除 node_modules/__pycache__/.venv/.git/data/*.db
+- `.github/workflows/test.yml` — CI：backend tests in Docker compose + frontend Docker build check
+- `requirements.txt` — 170 packages pip freeze（uv 导出的完整依赖图）
+- `backend/app/config.py` — 新增 `cors_origins` 字段（`RL_LAB_CORS_ORIGINS` 环境变量，逗号分隔）
+- `backend/app/main.py` — CORS middleware 从 settings 读取 origins（替代硬编码 localhost:5173）
+- `pyproject.toml` — 补充遗漏的 `optuna>=3.6` 依赖
+- `README.md` — 全面重写为 v1.0.0-dev：Docker 一键启动、技术栈版本表、功能矩阵、奖励变体详情、项目结构、路线图
+- `docs/deployment.md` — 完整部署指南：Docker Compose / 本地开发 / 架构图 / 环境变量说明 / 生产注意事项
+
+**设计决策**:
+- 使用 `requirements.txt` 而非 uv install 构建 Docker 镜像：`pip install --no-cache-dir -r requirements.txt` 比容器内 uv sync 更简单可靠
+- CORS 从硬编码改为环境变量 `RL_LAB_CORS_ORIGINS`：Docker 容器内 Vite dev server 端口不固定，生产需允许实际域名
+- 数据库/MLflow 数据写入 `/app/data/`（容器内），通过 volume 挂载到宿主机 `./data/` 实现持久化
+- 前端 Nginx 代理 `/api/` → `backend:8000`：浏览器直接用容器名访问不到 backend，Nginx 作为 API 网关统一入口
+- SSE 通过 `proxy_buffering off` 确保实时推流不被 Nginx 缓冲延迟
+
+**遇到的问题**: 无（所有文件创建顺利）
+
+**端到端验证结果**:
+- 39/39 后端测试全部通过 ✓
+- 前端 TypeScript 零错误，Vite build 通过 ✓
+- CI workflow 语法检查通过 ✓
+- Docker build 待用户本地验证 (`docker compose build`)
+
+**下一步计划**: 用户本地 `docker compose up -d` 验证 → v1.0.0-alpha.2（JWT 认证 + 回放视频修复 + 前端清理）

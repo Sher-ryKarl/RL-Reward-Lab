@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = False
 
+    # CORS
+    cors_origins: str = "http://localhost:5173,http://localhost"
+
     # RL
     default_total_steps: int = 50_000
     max_total_steps: int = 2_000_000

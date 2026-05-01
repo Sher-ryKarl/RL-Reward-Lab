@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${RL_LAB_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - RL_LAB_DATABASE_URL=${RL_LAB_DATABASE_URL:-sqlite+aiosqlite:////app/data/rl_lab.db}
+      - RL_LAB_MLFLOW_TRACKING_URI=${RL_LAB_MLFLOW_TRACKING_URI:-sqlite:////app/data/mlflow.db}
+      - RL_LAB_DATA_DIR=/app/data
+      - RL_LAB_CORS_ORIGINS=${RL_LAB_CORS_ORIGINS:-http://localhost,http://127.0.0.1}
+      - RL_LAB_DEVICE=${RL_LAB_DEVICE:-cpu}
+      - RL_LAB_MAX_CONCURRENT_RUNS=${RL_LAB_MAX_CONCURRENT_RUNS:-4}
+      - RL_LAB_DEBUG=${RL_LAB_DEBUG:-false}
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
