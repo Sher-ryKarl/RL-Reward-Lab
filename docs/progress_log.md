@@ -4,18 +4,19 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.1.0 已发布 |
+| 当前阶段 | v0.3.0 多环境开发中 |
 | 最后 Tag | `v0.1.0` |
-| 当前分支 | develop |
-| 最后提交 | `587a0f5` |
+| 当前分支 | feature/optuna-hpo |
+| 最后提交 | — |
 
 ### 待解决问题
 
 1. 前端 ECharts 实机数据渲染验证（需浏览器手测）
 2. 前端回放页视频加载（依赖 MLflow artifact 路由）
 3. RND 内在奖励在实机上的调参数值（β 系数）需要实验校准
-4. v0.2 引入 Optuna 超参搜索
-3. Docker 方案待 v0.4
+4. v0.2 Optuna HPO 端到端训练验证（需实机运行一次完整 sweep）
+5. v0.3 新环境（LunarLander/Acrobot）端到端训练验证
+6. Docker 方案待 v0.4
 
 ### 恢复上下文需读取的文件
 
@@ -142,3 +143,59 @@
 **下一步**: 用户手动浏览器验证 → v0.2 引入 Optuna HPO
 
 
+---
+
+### 2026-05-01 — Phase 5: v0.2 Optuna HPO 集成
+
+**完成工作**:
+- `backend/app/workers/hpo.py` — Optuna 超参搜索核心：TPESampler(multivariate=True)、RDBStorage、`_objective()` 采样→训练→评估 3 回合、`_sample_params()` 支持 5 种分布（loguniform/uniform/int/categorical/discrete_uniform）、`run_sweep()` 在 thread pool 中同步运行 Optuna
+- `backend/app/schemas/api.py` — 新增 `TrialResult`(number/value/params)、`OptimizationResult`(experiment_id/n_trials/best_value/best_params/trials/status)、`ExperimentCreate` 增加 `optimize:bool`/`search_space:dict`/`n_trials:int`
+- `backend/app/api/routes/experiments.py` — POST 分支：optimize=True 时不预创建 Run（由 sweep 完成时创建）、`_execute_optimization()` 后台任务、`GET /{id}/optimization` 端点返回 OptimizationResult
+- `frontend/src/api/client.ts` — 新增 `TrialResult`/`OptimizationResult` 类型、`getOptimization()` API 函数、`ExperimentCreate` 增加 optimize/search_space/n_trials 字段
+- `frontend/src/components/ExperimentForm/SearchSpaceEditor.tsx` — 基于行的搜索空间编辑器：参数下拉选择（7 个 PPO 超参）、分布类型选择（5 种）、根据分布动态显示 low/high/choices/q 输入框
+- `frontend/src/components/ExperimentForm/ExperimentForm.tsx` — 新增 "Optuna Hyperparameter Optimization" 开关、SearchSpaceEditor 集成、n_trials 输入、提交时校验搜索空间非空
+- `frontend/src/components/MonitorPanel/OptimizationCharts.tsx` — 散点图（Trial vs Reward）+ 并行坐标图（ECharts parallel）+ 试验历史表（按值排序，best 行高亮）+ 最佳结果卡片
+- `frontend/src/pages/ExperimentDetailPage.tsx` — 3s 轮询优化结果、渲染 OptimizationCharts
+- `backend/tests/test_api.py` — 新增 2 个测试：`test_create_optimize_experiment`（202 响应）、`test_get_optimization_nonexistent`（404）
+- 测试矩阵：22/22 全部通过（11 reward + 11 API）
+- TypeScript 类型检查零错误，Vite 生产构建通过
+
+**设计决策**:
+- optimize 模式仅使用第一个 reward_id（`body.reward_ids[0]`）进行搜索，多奖励同时优化的复杂度留给 v0.3
+- `run_sweep` 在独立 DB session 中创建 Run 记录并更新 Experiment 状态，通过 `merge()` 传递实验对象
+- Optuna 使用主数据库 URL（剥离 `+aiosqlite` 前缀）作为 RDBStorage，与 App DB 共用 SQLite 文件
+
+**遇到的问题**:
+- TypeScript `as const` 导致 DIST_TYPES.fields 类型推断为 `never[]`，去掉 `as const` 并显式声明类型解决
+
+**下一步计划**: 端到端验证（实机运行一次完整的 Optuna sweep，观察前端可视化）→ v0.3 多环境扩展
+
+
+---
+
+### 2026-05-01 — Phase 6: v0.3 多环境扩展
+
+**完成工作**:
+- `backend/app/rewards/base.py` — `RewardSpec.wrap()` 增加可选 `env_id` 参数，向后兼容
+- `backend/app/rewards/variants.py` — 提取 `_progress_fn(env_id)`/`_phi_fn(env_id)`/`_misleading_fn(env_id)` 三个 env-aware 工厂函数，为每个环境返回专用信号：
+  - **MountainCar-v0**: position+1.2 / position+0.5v² / |velocity|
+  - **CartPole-v1**: 同上（默认 fallback）
+  - **LunarLander-v2**: altitude / altitude+0.3·uprightness / total speed
+  - **Acrobot-v1**: tip height (forward kinematics) / tip height / |angular velocity|
+- `backend/app/core/registry.py` — 新增 `LunarLander-v2`、`Acrobot-v1` 到 ENV_REGISTRY（4 环境）
+- `backend/app/schemas/api.py` — `ExperimentCreate.env_id` 增加 `LunarLander-v2`、`Acrobot-v1`
+- `backend/app/workers/run_one.py` — 两处 `spec.wrap()` 传入 `env_id`
+- `backend/app/workers/hpo.py` — `spec.wrap()` 传入 `env_id`
+- `backend/tests/test_api.py` — env 数量断言更新为 4
+- 移除 `variants.py` 中未使用的 `numpy` 导入
+- 测试矩阵：22/22 全部通过
+- 前端 TypeScript 零错误，Vite build 通过（EnvSelector 动态渲染，无需修改）
+
+**设计决策**:
+- `env_id` 参数设为可选（默认 `""`），保持向后兼容；未识别环境回退到 MountainCar 默认值
+- 奖励工厂函数分层：泛型 Wrapper（`wrappers.py`，环境无关） → 工厂函数（`variants.py`，环境选择势函数） → RewardSpec 子类（不变）
+- Acrobot 的 tip height 通过正向运动学计算：`-cos(θ₁) - cos(θ₁+θ₂) = -obs[0] - obs[0]*obs[2] + obs[1]*obs[3]`
+
+**遇到的问题**: 无
+
+**下一步计划**: 端到端验证（在所有 4 个环境中测试训练链路）→ v0.4 多算法 (DQN/SAC) + GPU

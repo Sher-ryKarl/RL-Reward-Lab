@@ -6,9 +6,9 @@
 
 ## 当前状态
 
-- **版本**: v0.1.0-alpha.3（开发中）
-- **v0.1 范围**: 2 环境 × 1 算法 × 5 奖励变体 × 实时监控看板
-- **下一阶段**: v0.2 — Optuna 自动超参搜索
+- **版本**: v0.3.0-dev（开发中）
+- **当前范围**: 4 环境 × 1 算法 × 5 奖励变体 × Optuna HPO × 实时监控看板
+- **下一阶段**: v0.4 — 多算法 (DQN/SAC) + GPU
 
 ## 技术栈
 
@@ -72,16 +72,17 @@ pytest backend/tests/ -v
 cd frontend && npx tsc --noEmit
 ```
 
-## v0.1 功能
+## 当前功能
 
 | 功能 | 说明 |
 |---|---|
-| 环境 | MountainCar-v0, CartPole-v1 |
+| 环境 | MountainCar-v0, CartPole-v1, LunarLander-v2, Acrobot-v1 |
 | 算法 | PPO (MlpPolicy) |
 | 奖励变体 | R0_sparse / R1_dense / R2_pbrs_potential / R3_curiosity_rnd / R4_misleading |
 | 实验创建 | 多选奖励 × 多种子 → 并行训练 |
+| 超参搜索 | Optuna TPESampler，5 种分布，散点图 + 并行坐标可视化 |
 | 实时监控 | SSE 推送学习曲线 + PPO 健康度卡片 |
-| 实验对比 | 列表页 5s 轮询状态，对比页多选 |
+| 实验对比 | 列表页 3s 轮询状态，对比页多选 |
 | 策略回放 | 训练完成后 mp4 视频 |
 
 ## 奖励变体详情
@@ -131,9 +132,9 @@ RL-Reward-Lab/
 
 | 版本 | 主题 | Tag |
 |---|---|---|
-| v0.1 | 单环境 + PPO + 5 Reward | `v0.1.0-alpha.1` ~ `v0.1.0` |
-| v0.2 | Optuna HPO | — |
-| v0.3 | 多环境 (LunarLander 等) | — |
+| v0.1 | 单环境 + PPO + 5 Reward | `v0.1.0` ✅ |
+| v0.2 | Optuna HPO | — ✅
+| v0.3 | 多环境 (LunarLander/Acrobot) | — ✅
 | v0.4 | 多算法 (DQN/SAC) + GPU | — |
 | v0.5 | IRL/RLHF (imitation 集成) | — |
 | v1.0 | 文档站 + Docker Compose + 发布 | — |
