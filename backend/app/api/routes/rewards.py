@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.api.deps import get_current_user
 from pydantic import BaseModel, Field
 
 from app.core import reward_editor
@@ -36,7 +38,7 @@ async def list_rewards():
 
 
 @router.post("/rewards/custom", status_code=201)
-async def create_custom_reward(body: CustomRewardBody):
+async def create_custom_reward(body: CustomRewardBody, _user: str = Depends(get_current_user)):
     try:
         rid = reward_editor.register(body.code, body.name)
     except ValueError as e:
@@ -55,7 +57,7 @@ async def create_custom_reward(body: CustomRewardBody):
 
 
 @router.delete("/rewards/custom/{reward_id}", status_code=204)
-async def delete_custom_reward(reward_id: str):
+async def delete_custom_reward(reward_id: str, _user: str = Depends(get_current_user)):
     if not reward_editor.remove(reward_id):
         raise HTTPException(404, f"Custom reward '{reward_id}' not found")
     REWARD_REGISTRY.pop(reward_id, None)

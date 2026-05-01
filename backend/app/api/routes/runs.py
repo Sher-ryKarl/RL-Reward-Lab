@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.config import settings
 from app.db.models import Run as RunModel
 from app.schemas.api import RunSummary
@@ -36,7 +36,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{run_id}")
-async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db)):
+async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db), _user: str = Depends(get_current_user)):
     result = await db.execute(select(RunModel).where(RunModel.id == run_id))
     run = result.scalar_one_or_none()
     if not run:
@@ -71,3 +71,20 @@ async def get_replay_video(run_id: str, db: AsyncSession = Depends(get_db)):
             return FileResponse(candidate, media_type="video/mp4")
 
     raise HTTPException(404, "Video file not found")
+
+
+@router.get("/{run_id}/replay/status")
+async def get_replay_status(run_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(RunModel).where(RunModel.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(404, "Run not found")
+
+    video_dir = Path(settings.data_dir) / "videos" / run_id
+    if not video_dir.exists():
+        return {"available": False, "reason": "not_recorded"}
+
+    for _ in video_dir.iterdir():
+        return {"available": True, "reason": "ok"}
+
+    return {"available": False, "reason": "encoding_failed"}

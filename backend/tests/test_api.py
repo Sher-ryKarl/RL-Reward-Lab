@@ -389,3 +389,86 @@ async def test_delete_custom_reward(client: AsyncClient):
 
     r3 = await client.delete(f"/api/v1/rewards/custom/{rid}")
     assert r3.status_code == 404
+
+
+# ── Auth tests ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_auth_login_success(client: AsyncClient):
+    r = await client.post("/api/v1/auth/login", json={"password": "admin"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_auth_login_wrong_password(client: AsyncClient):
+    r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_me(client: AsyncClient):
+    r = await client.get("/api/v1/auth/me")
+    assert r.status_code == 200
+    assert r.json() == {"user": "admin"}
+
+
+@pytest.mark.asyncio
+async def test_auth_write_rejected_without_token(client: AsyncClient):
+    _disable_auth_bypass()
+    try:
+        r = await client.post(
+            "/api/v1/experiments",
+            json={
+                "name": "No Auth",
+                "env_id": "MountainCar-v0",
+                "algo_id": "PPO",
+                "reward_ids": ["R0_sparse"],
+                "hyperparams": {},
+                "total_steps": 1000,
+                "seeds": [0],
+            },
+        )
+        assert r.status_code == 401
+    finally:
+        _enable_auth_bypass()
+
+
+@pytest.mark.asyncio
+async def test_auth_custom_reward_rejected_without_token(client: AsyncClient):
+    _disable_auth_bypass()
+    try:
+        code = (
+            "import math\n"
+            "def reward_fn(obs, reward, terminated, truncated):\n"
+            "    return 1.0\n"
+        )
+        r = await client.post(
+            "/api/v1/rewards/custom",
+            json={"name": "Blocked", "code": code},
+        )
+        assert r.status_code == 401
+    finally:
+        _enable_auth_bypass()
+
+
+@pytest.mark.asyncio
+async def test_replay_status_no_video(client: AsyncClient):
+    r = await client.get("/api/v1/runs/nonexistent-replay-status/replay/status")
+    assert r.status_code == 404
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+
+def _disable_auth_bypass():
+    import os
+    os.environ.pop("PYTEST_CURRENT_TEST", None)
+
+
+def _enable_auth_bypass():
+    import os
+    os.environ["PYTEST_CURRENT_TEST"] = "1"

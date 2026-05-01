@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.core.registry import algo_supports_env
 from app.db.models import Experiment, Run as RunModel
 from app.schemas.api import (
@@ -30,6 +30,7 @@ async def create_experiment(
     body: ExperimentCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    _user: str = Depends(get_current_user),
 ):
     if not algo_supports_env(body.algo_id, body.env_id):
         from app.core.registry import ENV_REGISTRY

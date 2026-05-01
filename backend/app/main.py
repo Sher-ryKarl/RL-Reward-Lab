@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import algos, demos, envs, experiments, rewards, runs, stream
+from app.api.routes import algos, auth, demos, envs, experiments, rewards, runs, stream
 from app.config import settings
 from app.db.database import init_db
 
@@ -31,11 +31,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(algos.router)
+app.include_router(auth.router)
 app.include_router(demos.router)
 app.include_router(envs.router)
 app.include_router(rewards.router)

@@ -8,12 +8,24 @@ interface Props {
 
 export function ReplayViewer({ runId, runStatus }: Props) {
   const [videoError, setVideoError] = useState(false);
+  const [videoReason, setVideoReason] = useState<string | null>(null);
   const videoUrl = api.replayUrl(runId);
 
-  // Reset error state when runId changes
   useEffect(() => {
     setVideoError(false);
+    setVideoReason(null);
   }, [runId]);
+
+  useEffect(() => {
+    if (runStatus === "done") {
+      api.replayStatus(runId).then(
+        (s) => {
+          if (!s.available) setVideoReason(s.reason);
+        },
+        () => {},
+      );
+    }
+  }, [runId, runStatus]);
 
   if (runStatus && runStatus !== "done") {
     return (
@@ -26,12 +38,19 @@ export function ReplayViewer({ runId, runStatus }: Props) {
     );
   }
 
+  const reasonText: Record<string, string> = {
+    encoding_failed:
+      "Video recording failed (ffmpeg not available in the training environment).",
+    not_recorded: "No replay video was recorded for this run.",
+  };
+
   return (
     <div className="border rounded p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-2">Replay</h3>
-      {videoError ? (
+      {videoError || videoReason ? (
         <p className="text-sm text-gray-400">
-          No replay video available for this run.
+          {reasonText[videoReason || ""] ||
+            "No replay video available for this run."}
         </p>
       ) : (
         <video

@@ -24,9 +24,14 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
+    test_mode: bool = False  # Bypass auth in tests
 
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost"
+
+    # Auth
+    secret_key: str = "rl-lab-dev-secret-change-in-production"
+    admin_password: str = "admin"
 
     # RL
     default_total_steps: int = 50_000

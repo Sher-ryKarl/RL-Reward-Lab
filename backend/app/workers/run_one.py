@@ -204,5 +204,7 @@ def _record_replay(env_id: str, spec, model, run_id: str) -> Path | None:
         if video_file.exists():
             return video_file
         return None
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger("rl_lab").error("Replay recording failed for run %s: %s", run_id, exc)
         return None

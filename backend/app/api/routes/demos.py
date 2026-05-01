@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
 from app.db.models import Demo
 from app.schemas.api import DemoCreate, DemoSummary
 from app.workers.collect_demo import collect_demo
@@ -24,7 +24,7 @@ async def list_demos(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", status_code=202, response_model=DemoSummary)
-async def create_demo(body: DemoCreate, db: AsyncSession = Depends(get_db)):
+async def create_demo(body: DemoCreate, db: AsyncSession = Depends(get_db), _user: str = Depends(get_current_user)):
     if not body.source_run_id:
         raise HTTPException(400, "source_run_id is required to collect a demo")
 
@@ -91,7 +91,7 @@ async def get_demo(demo_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{demo_id}", status_code=204)
-async def delete_demo(demo_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_demo(demo_id: str, db: AsyncSession = Depends(get_db), _user: str = Depends(get_current_user)):
     result = await db.execute(select(Demo).where(Demo.id == demo_id))
     demo = result.scalar_one_or_none()
     if not demo:

@@ -40,7 +40,7 @@ export function NewExperimentPage() {
       <div className="text-center py-12">
         <p className="text-red-600">Failed to load environments and rewards from backend.</p>
         <p className="text-sm text-gray-500 mt-2">
-          Make sure the backend is running on http://localhost:8000
+          Please check that the backend server is running and accessible.
         </p>
       </div>
     );

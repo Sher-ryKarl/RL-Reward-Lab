@@ -3,11 +3,27 @@
  * Types are inferred from usage until openapi-typescript generation is wired.
  */
 
+const TOKEN_KEY = "rl_lab_token";
+
+function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
+  const token = getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error("401: Authentication required");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`${res.status}: ${body}`);
@@ -212,4 +228,8 @@ export const api = {
 
   // Replay video
   replayUrl: (runId: string) => `/api/v1/runs/${runId}/replay`,
+  replayStatus: (runId: string) =>
+    request<{ available: boolean; reason: string }>(
+      `/api/v1/runs/${runId}/replay/status`
+    ),
 };

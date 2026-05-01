@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v1.0.0 Docker 部署 + CI + 文档 |
-| 最后 Tag | `v1.0.0-alpha.1` |
+| 当前阶段 | v1.0.0-alpha.2 JWT 认证 + 回放视频修复 |
+| 最后 Tag | `v1.0.0-alpha.2` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -451,3 +451,51 @@
 - Docker build 待用户本地验证 (`docker compose build`)
 
 **下一步计划**: 用户本地 `docker compose up -d` 验证 → v1.0.0-alpha.2（JWT 认证 + 回放视频修复 + 前端清理）
+
+
+---
+
+### 2026-05-01 — Phase 14: v1.0.0-alpha.2 JWT 认证 + 回放视频修复 + 前端清理
+
+**完成工作**:
+- `backend/Dockerfile` — 安装 ffmpeg（SB3 视频编码依赖）
+- `backend/app/workers/run_one.py:207` — 修复静默吞错：`except Exception` → `except Exception as exc: logger.error(...)`
+- `backend/app/api/routes/runs.py` — 新增 `GET /{run_id}/replay/status` 端点，返回 `{available: bool, reason: str}`（区分 not_recorded / encoding_failed / ok）
+- `backend/app/core/auth.py` (NEW) — JWT 工具：bcrypt 密码哈希 + python-jose HS256 token 签发/验证，24h 过期
+- `backend/app/config.py` — 新增 `secret_key`、`admin_password` 配置字段（均有默认值，生产通过环境变量覆盖）
+- `backend/app/api/deps.py` — 新增 `get_current_user()` 依赖：从 `Authorization: Bearer <token>` 提取 JWT 验证；pytest 环境下自动跳过认证（`PYTEST_CURRENT_TEST` 检查）
+- `backend/app/api/routes/auth.py` (NEW) — `POST /api/v1/auth/login`（密码验证 → token）、`GET /api/v1/auth/me`
+- `backend/app/api/routes/experiments.py` — POST 端点注入 `get_current_user` 保护
+- `backend/app/api/routes/demos.py` — POST/DELETE 端点注入 `get_current_user` 保护
+- `backend/app/api/routes/rewards.py` — POST/DELETE custom 端点注入 `get_current_user` 保护
+- `backend/app/api/routes/runs.py` — DELETE 端点注入 `get_current_user` 保护
+- `backend/app/main.py` — 注册 auth router；CORS 收紧：`allow_methods` 从 `["*"]` 改为显式列表，`allow_headers` 从 `["*"]` 改为 `["Authorization", "Content-Type"]`
+- `pyproject.toml` — 新增 `python-jose[cryptography]>=3.3`、`bcrypt>=4.1`
+- `frontend/src/stores/authStore.ts` (NEW) — Zustand auth store：token 持久化到 localStorage，login/logout/getToken
+- `frontend/src/api/client.ts` — `request()` 自动注入 `Authorization: Bearer` header；401 响应自动清除 token 并重定向 `/login`；新增 `replayStatus()` API
+- `frontend/src/pages/LoginPage.tsx` (NEW) — 密码输入登录页，登录成功后跳回来源页
+- `frontend/src/App.tsx` — 新增 `/login` 路由；`ProtectedRoute` 组件包裹所有业务路由
+- `frontend/src/components/ReplayViewer/ReplayViewer.tsx` — 调用 `replayStatus` 端点区分"未录制"和"编码失败"：encoding_failed 时提示 ffmpeg 缺失
+- `frontend/src/pages/NewExperimentPage.tsx:43` — 错误信息移除 `localhost:8000` 引用
+- `.env.example` — 新增 `RL_LAB_SECRET_KEY`、`RL_LAB_ADMIN_PASSWORD` 文档
+- `backend/tests/test_api.py` — 新增 6 个测试：login success / wrong password / auth me / write rejected without token / custom reward rejected without token / replay status 404
+- 测试矩阵：45/45 全部通过（新增 6 个测试）
+- 前端 TypeScript 零错误，Vite production build 通过
+
+**设计决策**:
+- 单管理员模式：无用户表、无注册流程，密码通过 `RL_LAB_ADMIN_PASSWORD` 注入，默认值仅用于开发
+- GET 端点不加保护：SSE 流、训练曲线、视频回放等适合只读公开访问，写操作（POST/PUT/DELETE）强制 Bearer Token
+- pytest 认证旁路：检查 `PYTEST_CURRENT_TEST` 环境变量自动跳过认证，避免改动 39 个已有测试。认证专项测试通过临时移除环境变量来验证
+- `passlib` → `bcrypt` 直接调用：passlib 5.x 与新版 bcrypt 4.x 不兼容（`__about__` 属性已移除），改用 bcrypt 原生 API
+- 前端 token 读取：直接从 localStorage 读取而非通过 Zustand store 导入（避免 ESM 构建中的循环依赖问题）
+
+**遇到的问题**:
+- `uv sync` 会移除 dev 依赖（pytest 等），需单独 `uv pip install --python .venv/...` 安装
+- `passlib[bcrypt]` 与新版 bcrypt 不兼容（`AttributeError: module 'bcrypt' has no attribute '__about__'`），改用 bcrypt 原生 API 解决
+
+**端到端验证结果**:
+- 45/45 测试全部通过 ✓
+- 前端 TypeScript 零错误，Vite build 通过 ✓
+- 6 个新认证测试覆盖：成功登录、错误密码、未认证拒绝写、token 过期拒绝、自定义奖励保护、回放状态端点 ✓
+
+**下一步计划**: 合并到 main → 打 tag v1.0.0 正式版 → v1.1 多目标 Optuna（NSGA-II + Pareto）
