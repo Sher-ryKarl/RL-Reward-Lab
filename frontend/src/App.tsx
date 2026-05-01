@@ -4,6 +4,7 @@ import { MainLayout } from "./components/Layout/MainLayout";
 import { ExperimentListPage } from "./pages/ExperimentListPage";
 import { NewExperimentPage } from "./pages/NewExperimentPage";
 import { ExperimentDetailPage } from "./pages/ExperimentDetailPage";
+import { DemoListPage } from "./pages/DemoListPage";
 import { CompareView } from "./components/CompareView/CompareView";
 
 const queryClient = new QueryClient();
@@ -17,6 +18,7 @@ export default function App() {
             <Route path="/" element={<ExperimentListPage />} />
             <Route path="/new" element={<NewExperimentPage />} />
             <Route path="/experiments/:id" element={<ExperimentDetailPage />} />
+            <Route path="/demos" element={<DemoListPage />} />
             <Route path="/compare" element={<CompareView />} />
           </Route>
         </Routes>

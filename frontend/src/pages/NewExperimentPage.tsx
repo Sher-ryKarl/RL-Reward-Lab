@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, type AlgoInfo, type EnvInfo, type RewardInfo } from "../api/client";
 import { ExperimentForm } from "../components/ExperimentForm/ExperimentForm";
 
@@ -8,6 +9,16 @@ export function NewExperimentPage() {
   const [rewards, setRewards] = useState<RewardInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+
+  const prefill = useMemo(
+    () => ({
+      demo_id: searchParams.get("demo_id") || null,
+      env_id: searchParams.get("env_id") || null,
+      algo_id: searchParams.get("algo") || null,
+    }),
+    [searchParams]
+  );
 
   useEffect(() => {
     Promise.all([api.listEnvs(), api.listAlgos(), api.listRewards()])
@@ -37,8 +48,11 @@ export function NewExperimentPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-gray-800 mb-4">New Experiment</h2>
-      <ExperimentForm envs={envs} algos={algos} rewards={rewards} />
+      <Link to="/" className="text-sm text-indigo-600 hover:underline">
+        ← Back to Experiments
+      </Link>
+      <h2 className="text-lg font-semibold text-gray-800 mt-1 mb-4">New Experiment</h2>
+      <ExperimentForm envs={envs} algos={algos} rewards={rewards} prefill={prefill} />
     </div>
   );
 }

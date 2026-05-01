@@ -58,6 +58,8 @@ data/checkpoints/
 data/videos/
 data/tb/
 data/mlruns/
+data/custom_rewards.json
+data/demos/
 
 # Optuna
 optuna_study.db

@@ -138,8 +138,23 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  listExperiments: (page = 1, size = 20) =>
-    request<ExperimentList>(`/api/v1/experiments?page=${page}&size=${size}`),
+  listExperiments: (params?: {
+    page?: number;
+    size?: number;
+    status?: string;
+    env_id?: string;
+    algo_id?: string;
+    search?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.size) qs.set("size", String(params.size));
+    if (params?.status) qs.set("status", params.status);
+    if (params?.env_id) qs.set("env_id", params.env_id);
+    if (params?.algo_id) qs.set("algo_id", params.algo_id);
+    if (params?.search) qs.set("search", params.search);
+    return request<ExperimentList>(`/api/v1/experiments?${qs.toString()}`);
+  },
 
   getExperiment: (id: string) =>
     request<ExperimentSummary>(`/api/v1/experiments/${id}`),
@@ -166,6 +181,11 @@ export const api = {
   // Demos (v0.5)
   listDemos: () => request<DemoInfo[]>("/api/v1/demos"),
 
+  getDemo: (id: string) => request<DemoInfo>(`/api/v1/demos/${id}`),
+
+  deleteDemo: (id: string) =>
+    request<void>(`/api/v1/demos/${id}`, { method: "DELETE" }),
+
   createDemo: (body: {
     name: string;
     env_id: string;
@@ -180,4 +200,7 @@ export const api = {
 
   // SSE stream — handled separately in stream.ts
   streamUrl: (runId: string) => `/api/v1/runs/${runId}/stream`,
+
+  // Replay video
+  replayUrl: (runId: string) => `/api/v1/runs/${runId}/replay`,
 };

@@ -113,14 +113,28 @@ async def create_experiment(
 async def list_experiments(
     page: int = 1,
     size: int = 20,
+    status: str | None = None,
+    env_id: str | None = None,
+    algo_id: str | None = None,
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    count_q = await db.execute(select(Experiment))
+    stmt = select(Experiment)
+
+    if status:
+        stmt = stmt.where(Experiment.status == status)
+    if env_id:
+        stmt = stmt.where(Experiment.env_id == env_id)
+    if algo_id:
+        stmt = stmt.where(Experiment.algo_id == algo_id)
+    if search:
+        stmt = stmt.where(Experiment.name.ilike(f"%{search}%"))
+
+    count_q = await db.execute(stmt)
     total = len(count_q.scalars().all())
 
     q = (
-        select(Experiment)
-        .options(selectinload(Experiment.runs))
+        stmt.options(selectinload(Experiment.runs))
         .order_by(Experiment.created_at.desc())
         .offset((page - 1) * size)
         .limit(size)

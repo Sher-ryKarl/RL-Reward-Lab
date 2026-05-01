@@ -18,6 +18,9 @@ export function Navbar() {
         <Link to="/" className={linkCls("/")}>
           Experiments
         </Link>
+        <Link to="/demos" className={linkCls("/demos")}>
+          Demos
+        </Link>
         <Link to="/new" className={linkCls("/new")}>
           New
         </Link>

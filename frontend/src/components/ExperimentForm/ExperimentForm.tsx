@@ -10,11 +10,16 @@ interface Props {
   envs: EnvInfo[];
   algos: AlgoInfo[];
   rewards: RewardInfo[];
+  prefill?: {
+    demo_id: string | null;
+    env_id: string | null;
+    algo_id: string | null;
+  };
 }
 
-export function ExperimentForm({ envs, algos, rewards: initialRewards }: Props) {
-  const [envId, setEnvId] = useState("MountainCar-v0");
-  const [algoId, setAlgoId] = useState("PPO");
+export function ExperimentForm({ envs, algos, rewards: initialRewards, prefill }: Props) {
+  const [envId, setEnvId] = useState(prefill?.env_id || "MountainCar-v0");
+  const [algoId, setAlgoId] = useState(prefill?.algo_id || "PPO");
   const [rewardIds, setRewardIds] = useState<string[]>(["R0_sparse", "R1_dense"]);
   const [hp, setHp] = useState<Record<string, unknown>>({});
   const [totalSteps, setTotalSteps] = useState(50_000);
@@ -27,7 +32,7 @@ export function ExperimentForm({ envs, algos, rewards: initialRewards }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
   const [demos, setDemos] = useState<DemoInfo[]>([]);
-  const [demoId, setDemoId] = useState<string | null>(null);
+  const [demoId, setDemoId] = useState<string | null>(prefill?.demo_id || null);
   const [rewards, setRewards] = useState<RewardInfo[]>(initialRewards);
   const [editingReward, setEditingReward] = useState<RewardInfo | null | undefined>(undefined);
 
