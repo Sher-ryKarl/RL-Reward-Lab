@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.7.0 UX 补完 |
-| 最后 Tag | `v0.7.0-alpha.1` |
+| 当前阶段 | v0.8.0 连续动作环境 (Pendulum) |
+| 最后 Tag | `v0.8.0-alpha.1` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -349,4 +349,35 @@
 - 前端 TypeScript 0 错误，Vite build 成功 ✓
 - 37/37 测试通过 ✓
 
-**下一步计划**: v0.8 候选方向：连续动作环境 (Pendulum) / Optuna 深化（多目标优化）/ Docker 部署
+**下一步计划**: v0.9 候选方向：Optuna 深化（多目标优化、多奖励同时搜索）/ Docker 部署 / 前端回放页视频加载彻底修复
+
+
+---
+
+### 2026-05-01 — Phase 11: v0.8 连续动作环境 (Pendulum-v1 + SAC)
+
+**完成工作**:
+- `backend/app/core/registry.py` — ENV_REGISTRY 新增 `Pendulum-v1`（continuous action space），SAC 从此有了可用的连续环境
+- `backend/app/schemas/api.py` — `ExperimentCreate.env_id` 和 `DemoCreate.env_id` Literal 类型新增 `"Pendulum-v1"`
+- `backend/app/rewards/variants.py` — 新增 Pendulum 专用奖励函数：`_progress_fn` — cos(θ)（上摆进度）、`_phi_fn` — cos(θ) − 0.5·θ̇²（直立+角稳定性势函数）、`_misleading_fn` — |θ̇|（奖励旋转而非平衡）
+- `backend/tests/test_api.py` — 更新 3 项测试：`test_list_envs`（4→5）、`test_algo_env_compatibility`（重写为完整兼容矩阵含 Pendulum）、新增 `test_create_sac_pendulum_experiment`（202 验证）、新增 `test_create_dqn_rejected_for_continuous_env`（400 拒绝）
+- 测试矩阵：39/39 全部通过（新增 2 个测试）
+- 前端：零改动（EnvSelector 动态渲染、算法兼容性自动适配）
+
+**设计决策**:
+- Pendulum 是经典连续控制标杆（力矩控制单摆摆起），obs=3（cos/sin/θ̇），action=1（torque ∈ [-2,2]），适合展示连续动作空间下奖励塑形的效果
+- SAC 在注册表中已标记 `continuous=True`，之前因无连续环境无法使用，现在自动解锁
+- 所有 5 种奖励函数对 Pendulum 均适用：R0（sparse→0）、R1（cos(θ) 进度）、R2（直立+稳定性 PBRS）、R3（RND 内在动机）、R4（|θ̇| 反例）
+- 前端算法选择器自动根据 env action_space 灰选不兼容算法（Pendulum 选后 DQN 灰选、SAC 可选）
+
+**遇到的问题**: 无
+
+**端到端验证结果**:
+- Env 列表 API 返回 5 环境（含 Pendulum-v1, continuous） ✓
+- SAC + Pendulum + R1_dense 实验创建 → 子进程训练成功 → ep_rew_mean=-53.71（2000 步短训练，预期偏低） ✓
+- DQN + Pendulum 正确被 400 拒绝 ✓
+- 直接脚本验证 SAC + Pendulum 训练/保存/评估完整链路 ✓
+- 39/39 测试全部通过 ✓
+- 前端 TypeScript 0 错误 ✓
+
+**下一步计划**: v0.9 候选方向：Optuna 深化（多目标优化）/ Docker 部署
