@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.env
+.venv
+venv/
+*.log
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/dist/
+frontend/build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/volumes/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MLflow
+mlruns/
+mlartifacts/
+mlflow.db
+
+# RL outputs
+models/
+tensorboard_logs/
+tb/
+videos/
+runs/
+
+# Optuna
+optuna_study.db
+optuna-journal.log
+
+# DVC
+.dvc/cache/
+*.dvc
+
+# Misc
+*.pid
+celerybeat-schedule
+tmp/
