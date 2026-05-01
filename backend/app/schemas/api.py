@@ -28,7 +28,7 @@ class ExperimentCreate(BaseModel):
     algo_id: Literal["PPO"] = "PPO"
     reward_ids: list[str] = Field(min_length=1, max_length=8)
     hyperparams: PPOHyper = PPOHyper()
-    total_steps: int = Field(50_000, ge=1_000, le=2_000_000)
+    total_steps: int = Field(50_000, ge=100, le=2_000_000)
     seeds: list[int] = Field(default_factory=lambda: [0])
 
 
