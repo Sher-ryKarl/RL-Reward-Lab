@@ -4,16 +4,17 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | Phase 3 (v0.1.0-alpha.3) 已完成：前后端联调 + 端到端验证 |
-| 最后 Tag | `v0.1.0-alpha.3` |
+| 当前阶段 | v0.1.0 已发布 |
+| 最后 Tag | `v0.1.0` |
 | 当前分支 | develop |
-| 最后提交 | `87f1f79` → 即将提交 Phase 3 |
+| 最后提交 | `587a0f5` |
 
 ### 待解决问题
 
 1. 前端 ECharts 实机数据渲染验证（需浏览器手测）
 2. 前端回放页视频加载（依赖 MLflow artifact 路由）
 3. RND 内在奖励在实机上的调参数值（β 系数）需要实验校准
+4. v0.2 引入 Optuna 超参搜索
 3. Docker 方案待 v0.4
 
 ### 恢复上下文需读取的文件
@@ -108,6 +109,36 @@
 - **Windows multiprocessing Queue 跨进程序列化失败** — `RuntimeError: Queue objects should only be shared between processes through inheritance`。根因：Windows 使用 `spawn` 而非 `fork`，`mp.Queue()` 不可序列化。解决：改用 `mp.Manager().Queue()`。这是 `技术栈选型.md` 避坑 #4 的延伸——在 Windows 上子进程通信需要额外的序列化考量。
 - **uvicorn 端口占用残留** — 多次测试需手动 `taskkill`。建议后续添加 `lifespan` shutdown hook 清理。
 
-**下一步计划**: 提交审查报告，等待批准后进入 Phase 4（v0.1.0 发布：联调收尾 + 文档补全 + 一键启动脚本完善）
+**下一步计划**: 提交审查报告，等待批准后进入 Phase 4（v0.1.0 发布收尾）
+
+---
+
+### 2026-05-01 — Phase 4: v0.1.0 发布收尾
+
+**完成工作**:
+- `docs/architecture.md` — 完整架构文档（四层架构图、数据流序列图、模块交互、关键设计决策汇总）
+- `README.md` — 全面重写（快速开始指南、奖励变体详情表、项目结构、路线图、文档索引）
+- `backend/tests/test_api.py` — 9 个 API 集成测试（health/envs/rewards/experiments CRUD/validation/404）
+- 测试矩阵：20/20 全部通过（11 reward unit + 9 API integration）
+- `ExperimentCreate.total_steps` 下限由 1000→100（支持快速冒烟测试）
+
+**遇到的问题**: 无
+
+**v0.1.0 发布检查单**:
+- [x] 后端 FastAPI 骨架 + 全部路由
+- [x] 5 个奖励变体 (R0-R4) + PBRS Wrapper
+- [x] 训练 Worker (scheduler + subprocess + MLflow)
+- [x] SSE 实时流推送
+- [x] 前端 React 项目 + 4 页面 + 12 组件
+- [x] 端到端训练链路验证（Windows）
+- [x] 架构文档
+- [x] 3 个 ADR 决策记录
+- [x] 进度日志 + 需求澄清记录
+- [x] 20 测试全部通过
+- [x] 一键环境搭建脚本
+- [ ] 浏览器实机渲染验证（用户手动）
+- [ ] 前端 ECharts SSE 实时数据测试（需浏览器）
+
+**下一步**: 用户手动浏览器验证 → v0.2 引入 Optuna HPO
 
 
