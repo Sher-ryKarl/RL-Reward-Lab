@@ -83,7 +83,7 @@ def main():
         "algo_id": "BC",
         "reward_ids": ["R1_dense"],
         "hyperparams": {"batch_size": 32, "l2_weight": 1e-4},
-        "total_steps": 50,
+        "total_steps": 100,
         "seeds": [0],
         "demo_id": demo_id,
     }

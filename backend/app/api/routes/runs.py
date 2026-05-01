@@ -25,6 +25,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
         status=run.status,
         hyperparams=run.hyperparams,
         final_metrics=run.final_metrics,
+        artifact_path=run.artifact_path,
         started_at=run.started_at,
         ended_at=run.ended_at,
     )

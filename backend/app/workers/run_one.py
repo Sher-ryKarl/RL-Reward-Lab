@@ -125,6 +125,7 @@ def run_one(
                 observation_space=vec.observation_space,
                 action_space=vec.action_space,
                 demonstrations=trajectories,
+                rng=np.random.default_rng(seed),
                 batch_size=algo_hp.pop("batch_size", 32),
                 l2_weight=algo_hp.pop("l2_weight", 1e-4),
                 optimizer_kwargs=algo_hp.pop("optimizer_kwargs", {"lr": 1e-3}),

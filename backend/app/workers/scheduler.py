@@ -92,5 +92,9 @@ async def schedule_run(
                 mp_queue.put(None, timeout=1.0)
             except Exception:
                 pass
-            bridge_task.cancel()
+            # Wait for bridge to finish draining remaining messages
+            try:
+                await bridge_task
+            except asyncio.CancelledError:
+                pass
             _bridge_tasks.pop(run_model.id, None)

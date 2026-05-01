@@ -73,6 +73,7 @@ class RunSummary(BaseModel):
     status: str
     hyperparams: dict
     final_metrics: dict
+    artifact_path: str | None = None
     started_at: datetime | None
     ended_at: datetime | None
 

@@ -9,9 +9,9 @@ import gymnasium as gym
 import numpy as np
 import torch
 from imitation.data import rollout, serialize, types
-from imitation.policies.serialize import load_policy
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 from app.config import settings
 from app.rewards.variants import REWARD_REGISTRY
@@ -45,10 +45,7 @@ def collect_demo(
     np.random.seed(42)
     torch.manual_seed(42)
 
-    venv = gym.vector.make(env_id, num_envs=1, wrappers=[
-        lambda e: spec.wrap(e, env_id=env_id),
-        Monitor,
-    ])
+    venv = DummyVecEnv([make_env])
 
     # Load PPO model to extract policy
     model = PPO.load(str(checkpoint), device="cpu")
@@ -60,6 +57,7 @@ def collect_demo(
         venv,
         rollout.make_sample_until(min_timesteps=min_timesteps, min_episodes=n_episodes),
         rng=np.random.default_rng(42),
+        unwrap=False,
     )
 
     venv.close()

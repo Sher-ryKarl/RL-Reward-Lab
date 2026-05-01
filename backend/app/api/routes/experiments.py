@@ -242,6 +242,21 @@ async def _execute_experiment(exp_id: str) -> None:
 
             try:
                 await schedule_run(run_model, exp, queue)
+
+                # Drain final metrics / artifact from the asyncio queue
+                final_metrics: dict = {}
+                while not queue.empty():
+                    try:
+                        msg = queue.get_nowait()
+                        if msg and msg.get("run_id") == run_model.id:
+                            m = msg.get("metrics", {})
+                            if "artifact" in m:
+                                run_model.artifact_path = m.pop("artifact")
+                            m.pop("status", None)
+                            final_metrics.update(m)
+                    except asyncio.QueueEmpty:
+                        break
+                run_model.final_metrics = final_metrics
                 run_model.status = "done"
                 run_model.ended_at = datetime.now(timezone.utc)
             except Exception as exc:
