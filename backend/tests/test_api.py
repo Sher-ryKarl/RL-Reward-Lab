@@ -461,6 +461,71 @@ async def test_replay_status_no_video(client: AsyncClient):
     assert r.status_code == 404
 
 
+# ── Rate Limit (v1.3) ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_requests_bypass_rate_limit(client: AsyncClient):
+    """GET/HEAD/OPTIONS must not be rate-limited."""
+    from app.core.rate_limit import _bucket
+
+    old_max = _bucket.max_tokens
+    old_buckets = _bucket._buckets.copy()
+    try:
+        _bucket.max_tokens = 1
+        _bucket._buckets.clear()
+        # Exhaust the only token with a POST
+        await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        # GET should still work
+        r = await client.get("/health")
+        assert r.status_code == 200
+    finally:
+        _bucket.max_tokens = old_max
+        _bucket._buckets = old_buckets
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_triggers_429(client: AsyncClient):
+    """Write requests beyond the token bucket must return 429."""
+    from app.core.rate_limit import _bucket
+
+    old_max = _bucket.max_tokens
+    old_buckets = _bucket._buckets.copy()
+    try:
+        _bucket.max_tokens = 3
+        _bucket._buckets.clear()
+
+        for _ in range(3):
+            r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+            assert r.status_code != 429, f"Expected non-429, got {r.status_code}"
+
+        r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        assert r.status_code == 429, f"Expected 429, got {r.status_code}"
+    finally:
+        _bucket.max_tokens = old_max
+        _bucket._buckets = old_buckets
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_429_includes_retry_after(client: AsyncClient):
+    """Verify 429 response includes Retry-After header."""
+    from app.core.rate_limit import _bucket
+
+    old_max = _bucket.max_tokens
+    old_buckets = _bucket._buckets.copy()
+    try:
+        _bucket.max_tokens = 1
+        _bucket._buckets.clear()
+
+        await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        assert r.status_code == 429
+        assert "retry-after" in r.headers
+    finally:
+        _bucket.max_tokens = old_max
+        _bucket._buckets = old_buckets
+
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 

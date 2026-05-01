@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     secret_key: str = "rl-lab-dev-secret-change-in-production"
     admin_password: str = "admin"
 
+    # Rate limit
+    rate_limit: str = "30/minute"
+
     # RL
     default_total_steps: int = 50_000
     max_total_steps: int = 2_000_000

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import algos, auth, demos, envs, experiments, rewards, runs, stream
 from app.config import settings
+from app.core.rate_limit import RateLimitMiddleware
 from app.db.database import init_db
 
 
@@ -26,6 +27,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

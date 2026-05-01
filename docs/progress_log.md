@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v1.2.0-alpha.1 交互式 Pareto 权重调整 + 约束优化 |
-| 最后 Tag | `v1.2.0-alpha.1` |
+| 当前阶段 | v1.3.0-alpha.1 速率限制中间件 |
+| 最后 Tag | `v1.3.0-alpha.1` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -589,3 +589,28 @@
 - 5 个推荐端点测试覆盖：权重评分、约束过滤、非法操作符拒绝、非法目标拒绝、单目标兼容 ✓
 
 **下一步计划**: v1.3 候选方向：速率限制 / ECharts 前端性能优化 / 多用户支持
+
+---
+
+### 2026-05-01 — Phase 17: v1.3.0-alpha.1 速率限制中间件
+
+**完成工作**:
+- `backend/app/core/rate_limit.py` (NEW, ~94 行) — Token-bucket 速率限制 ASGI 中间件：
+  - `_TokenBucket` 类：固定窗口计数器（asyncio.Lock 同步，per-IP 桶）
+  - `_parse_rate_limit()`：解析 `"30/minute"` 格式 → (count, window_seconds)
+  - `RateLimitMiddleware`：ASGI 中间件，仅对 `POST/PUT/DELETE/PATCH` 限流，`GET/HEAD/OPTIONS` 豁免
+  - 超限返回 429 + `Retry-After` 头 + JSON error detail
+- `backend/app/config.py` — 新增 `rate_limit: str = "30/minute"` 配置项（`RL_LAB_RATE_LIMIT` env）
+- `backend/app/main.py` — 注册 `RateLimitMiddleware`（在 CORS 之前，确保最先处理）
+- `.env.example` — 新增 `RL_LAB_RATE_LIMIT=30/minute` 配置说明
+- `backend/tests/test_api.py` — 新增 3 个测试：GET 豁免验证、429 触发验证、Retry-After 头验证
+- 测试矩阵：58/58 全部通过（55 → 58 测试）
+
+**设计决策**:
+- 固定窗口计数器（而非 leaky bucket）：管理工具场景足够，实现简单
+- 中间件注册在 CORS 之前：确保 429 响应也包含 CORS 头（浏览器可读）
+- 单例 `_bucket`：模块加载时初始化，所有请求共享同一个 token pool
+
+**遇到的问题**: 无（实现直接，无意外复杂度）
+
+**下一步计划**: v1.3.0-alpha.2 前端性能优化（ECharts 懒加载、虚拟化、降采样）
