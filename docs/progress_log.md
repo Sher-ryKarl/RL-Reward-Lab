@@ -4,9 +4,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v0.6.0 奖励函数编辑器 + 基线对比实验 |
-| 最后 Tag | `v0.6.0-alpha.1` |
-| 当前分支 | feature/multi-algo |
+| 当前阶段 | v0.7.0 UX 补完 |
+| 最后 Tag | `v0.7.0-alpha.1` |
+| 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
 ### 待解决问题
@@ -310,4 +310,43 @@
 - 使用自定义奖励创建实验 → Worker 子进程成功加载 → 训练完成（ep_rew_mean=1800，验证 200 步 × 9 = 1800 符合预期） ✓
 - 37/37 测试全部通过 ✓
 
-**下一步计划**: v0.7 候选方向：Docker 部署 / 前端 Demo 管理页面 / 连续动作环境 (Pendulum)
+**下一步计划**: v0.8 候选方向：连续动作环境 (Pendulum) / Optuna 深化（多目标优化）/ Docker 部署
+
+
+---
+
+### 2026-05-01 — Phase 10: v0.7 UX 补完（Demo 管理 + 实验筛选 + Replay + 工作流串联）
+
+**完成工作**:
+- `frontend/src/pages/DemoListPage.tsx` — 新建 Demo 管理页：列表展示（env/reward/episodes/steps/日期）、删除（确认对话框）、"Clone (BC)"一键跳转实验创建表单（携带 demo_id/env_id/algo 查询参数）
+- `frontend/src/api/client.ts` — 新增 `getDemo(id)`、`deleteDemo(id)`、`replayUrl(runId)`；`listExperiments` 改为接受筛选参数对象（status/env_id/algo_id/search/page/size）
+- `backend/app/api/routes/experiments.py` — `list_experiments` 新增可选筛选参数：`status`、`env_id`、`algo_id`、`search`（名称模糊匹配）
+- `frontend/src/pages/ExperimentListPage.tsx` — 重写：分页控件（Prev/Next + 行数选择 10/20/50）、状态/env/algo/名称 四维筛选器、全选复选框、批量对比按钮（≥2 项跳转 `/compare?ids=...`）、总条目数显示
+- `frontend/src/components/CompareView/CompareView.tsx` — 重写：从 URL `?ids=` 参数读取实验 ID 列表，并行加载展示实验摘要卡片 + 所有 run 的 MultiRunChart 叠加对比
+- `backend/app/api/routes/runs.py` — 新增 `GET /{run_id}/replay` 端点：检查 `data/videos/{run_id}/` 目录，返回 `.mp4` FileResponse
+- `frontend/src/components/ReplayViewer/ReplayViewer.tsx` — 重写：真实 `<video>` 元素加载 replay 端点、运行中显示等待提示、加载失败优雅降级
+- `frontend/src/pages/ExperimentDetailPage.tsx` — 新增 "Clone & Re-run" 快捷入口、done run 旁 "+Demo" 按钮（内联 episodes 输入 + Collect 提交）、成功/失败反馈消息 + 跳转 Demos 页链接
+- `frontend/src/pages/NewExperimentPage.tsx` — 从 URL 读取 `demo_id`/`env_id`/`algo` 查询参数，作为 `prefill` 传入 ExperimentForm
+- `frontend/src/components/ExperimentForm/ExperimentForm.tsx` — 新增 `prefill` prop（envId/algoId/demoId 预设值）
+- `frontend/src/App.tsx` — 新增 `/demos` 路由
+- `frontend/src/components/Layout/Navbar.tsx` — 新增 Demos 导航链接
+- `.gitignore` — 新增 `data/custom_rewards.json`、`data/demos/`
+- 测试矩阵：37/37 全部通过；前端 TypeScript 零错误；Vite build 通过
+
+**设计决策**:
+- 实验筛选参数全部设为可选、组合叠加：未传参时行为与原来一致（向后兼容）
+- Demo 删除使用 `confirm()` 原生对话框（简单可靠），不做自定义 Modal
+- Replay 视频路径遵循 `VecVideoRecorder` 命名约定：`data/videos/{run_id}/step-0-to-step-600.mp4`
+- "Clone (BC)" 通过 URL 查询参数传递给 NewExperimentPage，ExperimentForm 的 prefill prop 驱动初始状态
+- 批量对比通过 URL `?ids=` 实现（可分享链接），CompareView 并行 fetch 各实验
+
+**遇到的问题**: 无（本轮全部为纯前端 + 现有 API 适配，无新算法、无子进程通信变更）
+
+**端到端验证结果**:
+- 实验筛选 API（status/env_id/search）返回正确结果 ✓
+- Demo 列表 API 正常 ✓
+- Replay 端点对无视频的 run 正确返回 404 ✓
+- 前端 TypeScript 0 错误，Vite build 成功 ✓
+- 37/37 测试通过 ✓
+
+**下一步计划**: v0.8 候选方向：连续动作环境 (Pendulum) / Optuna 深化（多目标优化）/ Docker 部署
