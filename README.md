@@ -132,6 +132,8 @@ RL-Reward-Lab/
 ## 文档索引
 
 - [系统架构](docs/architecture.md)
+- [后端开发者指南](docs/backend_guide.md)
+- [前端开发者指南](docs/frontend_guide.md)
 - [部署指南](docs/deployment.md)
 - [开发日志](docs/progress_log.md)
 - [需求澄清](docs/requirements_clarification.md)
