@@ -137,6 +137,7 @@ RL-Reward-Lab/
 - [需求澄清](docs/requirements_clarification.md)
 - [技术决策 (ADR)](docs/decisions/)
 - [工程规范](CLAUDE.md)
+- [用户手册](docs/user-guide.md)
 
 ## 路线图
 
