@@ -4,8 +4,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 当前阶段 | v1.3.0-alpha.2 前端性能优化 |
-| 最后 Tag | `v1.3.0-alpha.2` |
+| 当前阶段 | v1.3.0-alpha.3 多用户支持 |
+| 最后 Tag | `v1.3.0-alpha.3` |
 | 当前分支 | feature/ux-polish |
 | 最后提交 | — |
 
@@ -646,3 +646,54 @@
 - 后端 47/47 测试全通过 ✓
 
 **下一步计划**: v1.3.0-alpha.3 多用户支持（User 表、注册、实验归属、权限）
+
+---
+
+### 2026-05-02 — Phase 19: v1.3.0-alpha.3 多用户支持
+
+**完成工作**:
+- `backend/app/db/models.py` — 新增 `User` 模型（id: `secrets.token_hex(6)` 12 位、username、hashed_password、created_at）；`Experiment`/`Demo` 加 `user_id` FK + `owner` relationship
+- `backend/app/db/database.py` — `init_db()` 增加手动迁移（SQLite ADD COLUMN 幂等包裹）、admin 用户播种、遗留数据归属
+- `backend/app/core/auth.py` — `create_access_token(user_id)` 接受 user_id；`verify_password(plain, hashed)` 改为比对 bcrypt hash；新增 `hash_password()`；移除单例 admin 密码缓存
+- `backend/app/api/deps.py` — `get_current_user` 返回 `User` ORM 对象（DB 查询替代硬编码 `"admin"`）；PYTEST_CURRENT_TEST 模式下自动创建 admin 用户
+- `backend/app/api/routes/auth.py` — Login 接受 `username`+`password`，返回 user 对象；新增 `POST /register`（校验 username 3-64 唯一、password ≥6）；`GET /me` 加 auth 依赖
+- `backend/app/api/routes/experiments.py` — 创建写入 `user_id`；列表/详情/优化/推荐端点按 `user_id` 过滤
+- `backend/app/api/routes/demos.py` — 创建写入 `user_id`；列表/详情/删除按 owner 过滤
+- `backend/app/api/routes/runs.py` — 取消/删除通过 JOIN Experiment 间接校验所有权
+- `backend/app/api/routes/rewards.py` — 自定义奖励创建/列表/删除按 `user_id` 过滤
+- `backend/app/core/reward_editor.py` — `register`/`list_custom`/`remove` 增加 `user_id` 参数；JSON 持久化含 `user_id` 字段
+- `backend/app/schemas/api.py` — `ExperimentSummary`/`DemoSummary` 加 `user_id` 字段
+- `backend/app/config.py` — `admin_password` 默认值改为 `"admin123"`
+- `.env.example` — admin 密码默认值同步更新，加注释说明
+- `frontend/src/stores/authStore.ts` — 新增 `user` 对象（id + username）、`localStorage` 持久化
+- `frontend/src/api/client.ts` — 新增 `login()`/`register()`/`me()` API
+- `frontend/src/pages/LoginPage.tsx` — 增加 username 输入框，使用 `api.login`，链接注册页
+- `frontend/src/pages/RegisterPage.tsx` (NEW) — 注册表单：username + password + confirm password，前端双重校验（≥6 字符 + 一致性），注册后自动登录
+- `frontend/src/components/Layout/Navbar.tsx` — 显示当前用户名 + 登出按钮（右侧对齐）
+- `frontend/src/App.tsx` — 增加 `/register` 路由
+- `backend/tests/test_api.py` — 新增 6 个测试（注册成功/冲突/短密码、跨用户读隔离、跨用户写拒绝、自定义奖励隔离）；修复 rate limit 测试 bucket 污染问题；改为 session-scoped 数据库初始化
+- **测试矩阵**: 53/53 全部通过（47 → 53）
+- **前端**: TypeScript 零错误，Vite production build 通过（960ms）
+
+**设计决策**:
+- User id 用 `secrets.token_hex(6)` 生成 12 位唯一值：无需额外依赖，安全性足够
+- 密码最小长度 6：后端 Pydantic `min_length=6` + 前端二次校验
+- Admin 账户通过 `settings.admin_password` 自动播种：迁移幂等，确保升级平滑
+- Run 不设 `user_id`：通过 experiment 间接归属，避免冗余和外键不一致
+- 自定义奖励继续用 JSON 文件 + `user_id`：最小改动，避免 DB 迁移扩大化
+- 测试数据库改为 session-scoped 初始化（同步 SQLite engine），避免 ASGITransport 不触发 lifespan 问题
+
+**遇到的问题**:
+- `ASGITransport` 不触发 FastAPI lifespan → `init_db` 不执行 → 表不存在。解决：pytest session fixture 用同步 engine 直接创建表 + 播种 admin。
+- Rate limit 测试的共享 `_bucket` 污染后续测试的 token pool。解决：finally 块中 `_bucket._buckets.clear()` 重置。
+- 跨用户测试因残留 DB 数据触发 409 username conflict。解决：session fixture 每次删除旧 DB 文件。
+
+**下一步计划**: 合并到 main，打 v1.3.0 正式标签，更新 README，项目总结
+
+### 审查报告 — v1.3.0-alpha.3
+
+1. **所有测试是否全部通过？** 是。53/53 全绿。
+2. **新增/修改代码是否有对应测试覆盖？** 是。6 个新测试覆盖注册、冲突、密码校验、读隔离、写拒绝、自定义奖励隔离。
+3. **相关文档是否已同步更新？** 是。progress_log Phase 19 条目完整。
+4. **是否存在临时方案或安全隐患？** 无。密码 bcrypt 哈希、JWT HS256、SQL 参数化查询、username 唯一定位。
+5. **后续计划是否需要调整？** 按计划合并到 main，打 v1.3.0 正式标签，更新 README。

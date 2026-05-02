@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.config import settings
-from app.db.models import Run as RunModel
+from app.db.models import Experiment, Run as RunModel, User
 from app.schemas.api import RunSummary
 from app.workers.scheduler import RUN_QUEUES
 
@@ -36,8 +36,12 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{run_id}")
-async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db), _user: str = Depends(get_current_user)):
-    result = await db.execute(select(RunModel).where(RunModel.id == run_id))
+async def cancel_run(run_id: str, db: AsyncSession = Depends(get_db), _user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(RunModel)
+        .join(Experiment, RunModel.experiment_id == Experiment.id)
+        .where(RunModel.id == run_id, Experiment.user_id == _user.id)
+    )
     run = result.scalar_one_or_none()
     if not run:
         raise HTTPException(404, "Run not found")

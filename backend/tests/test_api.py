@@ -11,6 +11,45 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _init_test_db():
+    """Initialize test database once (ASGITransport bypasses lifespan)."""
+    import secrets
+
+    import bcrypt
+    from app.config import settings
+
+    db_path = settings.project_root / "data" / "rl_lab.db"
+    if db_path.exists():
+        db_path.unlink()
+
+    from sqlalchemy import create_engine, text
+
+    sync_url = settings.database_url.replace("+aiosqlite", "", 1)
+    sync_engine = create_engine(sync_url)
+
+    # Ensure all models are imported before create_all
+    import app.db.models  # noqa: F401
+    from app.db.database import Base
+
+    Base.metadata.create_all(sync_engine)
+
+    # Seed admin user
+    hashed = bcrypt.hashpw(settings.admin_password.encode(), bcrypt.gensalt()).decode()
+    uid = secrets.token_hex(6)
+    with sync_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO \"user\" (id, username, hashed_password, created_at) "
+                "VALUES (:id, 'admin', :pw, datetime('now'))"
+            ),
+            {"id": uid, "pw": hashed},
+        )
+    sync_engine.dispose()
+
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _cleanup_custom_rewards():
     """Remove custom rewards added during a test."""
@@ -396,16 +435,17 @@ async def test_delete_custom_reward(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_auth_login_success(client: AsyncClient):
-    r = await client.post("/api/v1/auth/login", json={"password": "admin"})
+    r = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"})
     assert r.status_code == 200
     data = r.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
+    assert data["user"]["username"] == "admin"
 
 
 @pytest.mark.asyncio
 async def test_auth_login_wrong_password(client: AsyncClient):
-    r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+    r = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
     assert r.status_code == 401
 
 
@@ -413,7 +453,9 @@ async def test_auth_login_wrong_password(client: AsyncClient):
 async def test_auth_me(client: AsyncClient):
     r = await client.get("/api/v1/auth/me")
     assert r.status_code == 200
-    assert r.json() == {"user": "admin"}
+    data = r.json()
+    assert data["user"]["username"] == "admin"
+    assert "id" in data["user"]
 
 
 @pytest.mark.asyncio
@@ -475,13 +517,13 @@ async def test_get_requests_bypass_rate_limit(client: AsyncClient):
         _bucket.max_tokens = 1
         _bucket._buckets.clear()
         # Exhaust the only token with a POST
-        await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
         # GET should still work
         r = await client.get("/health")
         assert r.status_code == 200
     finally:
         _bucket.max_tokens = old_max
-        _bucket._buckets = old_buckets
+        _bucket._buckets.clear()
 
 
 @pytest.mark.asyncio
@@ -490,20 +532,19 @@ async def test_rate_limit_triggers_429(client: AsyncClient):
     from app.core.rate_limit import _bucket
 
     old_max = _bucket.max_tokens
-    old_buckets = _bucket._buckets.copy()
     try:
         _bucket.max_tokens = 3
         _bucket._buckets.clear()
 
         for _ in range(3):
-            r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+            r = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
             assert r.status_code != 429, f"Expected non-429, got {r.status_code}"
 
-        r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        r = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
         assert r.status_code == 429, f"Expected 429, got {r.status_code}"
     finally:
         _bucket.max_tokens = old_max
-        _bucket._buckets = old_buckets
+        _bucket._buckets.clear()
 
 
 @pytest.mark.asyncio
@@ -512,18 +553,157 @@ async def test_rate_limit_429_includes_retry_after(client: AsyncClient):
     from app.core.rate_limit import _bucket
 
     old_max = _bucket.max_tokens
-    old_buckets = _bucket._buckets.copy()
     try:
         _bucket.max_tokens = 1
         _bucket._buckets.clear()
 
-        await client.post("/api/v1/auth/login", json={"password": "wrong"})
-        r = await client.post("/api/v1/auth/login", json={"password": "wrong"})
+        await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
+        r = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong"})
         assert r.status_code == 429
         assert "retry-after" in r.headers
     finally:
         _bucket.max_tokens = old_max
-        _bucket._buckets = old_buckets
+        _bucket._buckets.clear()
+
+
+# ── Multi-user (v1.3) ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_register_success(client: AsyncClient):
+    r = await client.post("/api/v1/auth/register", json={
+        "username": "newuser",
+        "password": "test1234",
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["user"]["username"] == "newuser"
+
+
+@pytest.mark.asyncio
+async def test_register_username_conflict(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json={
+        "username": "dupeuser",
+        "password": "test1234",
+    })
+    r = await client.post("/api/v1/auth/register", json={
+        "username": "dupeuser",
+        "password": "test1234",
+    })
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_short_password(client: AsyncClient):
+    r = await client.post("/api/v1/auth/register", json={
+        "username": "shortpw",
+        "password": "ab",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cross_user_read_isolation(client: AsyncClient):
+    _disable_auth_bypass()
+    try:
+        # Register two users
+        r_a = await client.post("/api/v1/auth/register", json={"username": "alice", "password": "alice123"})
+        token_a = r_a.json()["access_token"]
+        r_b = await client.post("/api/v1/auth/register", json={"username": "bob", "password": "bob123"})
+        token_b = r_b.json()["access_token"]
+
+        auth_a = {"Authorization": f"Bearer {token_a}"}
+        auth_b = {"Authorization": f"Bearer {token_b}"}
+
+        # Alice creates an experiment
+        body = {
+            "name": "Alice Exp",
+            "env_id": "MountainCar-v0",
+            "algo_id": "PPO",
+            "reward_ids": ["R0_sparse"],
+            "hyperparams": {},
+            "total_steps": 100,
+            "seeds": [0],
+        }
+        r = await client.post("/api/v1/experiments", json=body, headers=auth_a)
+        assert r.status_code == 202
+        exp_id = r.json()["id"]
+
+        # Bob cannot see Alice's experiment
+        r = await client.get(f"/api/v1/experiments/{exp_id}", headers=auth_b)
+        assert r.status_code == 404
+
+        # Alice can see her own experiment
+        r = await client.get(f"/api/v1/experiments/{exp_id}", headers=auth_a)
+        assert r.status_code == 200
+    finally:
+        _enable_auth_bypass()
+
+
+@pytest.mark.asyncio
+async def test_cross_user_write_rejected(client: AsyncClient):
+    _disable_auth_bypass()
+    try:
+        r_a = await client.post("/api/v1/auth/register", json={"username": "charlie", "password": "charlie123"})
+        token_a = r_a.json()["access_token"]
+        r_b = await client.post("/api/v1/auth/register", json={"username": "dave", "password": "dave123"})
+        token_b = r_b.json()["access_token"]
+
+        auth_a = {"Authorization": f"Bearer {token_a}"}
+        auth_b = {"Authorization": f"Bearer {token_b}"}
+
+        # Charlie creates an experiment
+        body = {
+            "name": "Charlie Exp",
+            "env_id": "MountainCar-v0",
+            "algo_id": "PPO",
+            "reward_ids": ["R0_sparse"],
+            "hyperparams": {},
+            "total_steps": 100,
+            "seeds": [0],
+        }
+        r = await client.post("/api/v1/experiments", json=body, headers=auth_a)
+        assert r.status_code == 202
+        exp_id = r.json()["id"]
+
+        # Dave cannot create a demo linked to Charlie's run (the run doesn't exist anyway)
+        # But more importantly, Dave cannot cancel a run belonging to Charlie
+        run_id = r.json()["runs"][0]["id"]
+        r = await client.delete(f"/api/v1/runs/{run_id}", headers=auth_b)
+        assert r.status_code == 404  # Not found (hidden from Dave)
+    finally:
+        _enable_auth_bypass()
+
+
+@pytest.mark.asyncio
+async def test_cross_user_custom_reward_isolation(client: AsyncClient):
+    _disable_auth_bypass()
+    try:
+        r_a = await client.post("/api/v1/auth/register", json={"username": "eve", "password": "eve1234"})
+        token_a = r_a.json()["access_token"]
+        r_b = await client.post("/api/v1/auth/register", json={"username": "frank", "password": "frank123"})
+        token_b = r_b.json()["access_token"]
+
+        auth_a = {"Authorization": f"Bearer {token_a}"}
+        auth_b = {"Authorization": f"Bearer {token_b}"}
+
+        # Eve creates a custom reward
+        code = "def reward_fn(obs, reward, terminated, truncated):\n    return 1.0\n"
+        r = await client.post("/api/v1/rewards/custom", json={"name": "EveCustom", "code": code}, headers=auth_a)
+        assert r.status_code == 201
+        rid = r.json()["reward_id"]
+
+        # Frank cannot delete Eve's custom reward
+        r = await client.delete(f"/api/v1/rewards/custom/{rid}", headers=auth_b)
+        assert r.status_code == 404  # Not found
+
+        # Eve can delete it
+        r = await client.delete(f"/api/v1/rewards/custom/{rid}", headers=auth_a)
+        assert r.status_code == 204
+    finally:
+        _enable_auth_bypass()
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

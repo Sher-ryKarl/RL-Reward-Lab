@@ -8,6 +8,7 @@ from app.api.deps import get_current_user
 from pydantic import BaseModel, Field
 
 from app.core import reward_editor
+from app.db.models import User
 from app.rewards.custom_spec import CustomRewardSpec
 from app.rewards.variants import REWARD_REGISTRY
 
@@ -20,7 +21,7 @@ class CustomRewardBody(BaseModel):
 
 
 @router.get("/rewards")
-async def list_rewards():
+async def list_rewards(_user: User = Depends(get_current_user)):
     builtins = [s.to_dict() for s in REWARD_REGISTRY.values()]
     customs = [
         {
@@ -32,15 +33,15 @@ async def list_rewards():
             "references": [],
             "code": r["code"],
         }
-        for r in reward_editor.list_custom()
+        for r in reward_editor.list_custom(_user.id)
     ]
     return builtins + customs
 
 
 @router.post("/rewards/custom", status_code=201)
-async def create_custom_reward(body: CustomRewardBody, _user: str = Depends(get_current_user)):
+async def create_custom_reward(body: CustomRewardBody, _user: User = Depends(get_current_user)):
     try:
-        rid = reward_editor.register(body.code, body.name)
+        rid = reward_editor.register(body.code, body.name, _user.id)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -57,8 +58,8 @@ async def create_custom_reward(body: CustomRewardBody, _user: str = Depends(get_
 
 
 @router.delete("/rewards/custom/{reward_id}", status_code=204)
-async def delete_custom_reward(reward_id: str, _user: str = Depends(get_current_user)):
-    if not reward_editor.remove(reward_id):
+async def delete_custom_reward(reward_id: str, _user: User = Depends(get_current_user)):
+    if not reward_editor.remove(reward_id, _user.id):
         raise HTTPException(404, f"Custom reward '{reward_id}' not found")
     REWARD_REGISTRY.pop(reward_id, None)
     return None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -17,6 +18,26 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+def _new_user_id() -> str:
+    return secrets.token_hex(6)
+
+
+class User(Base):
+    __tablename__ = "user"
+
+    id: Mapped[str] = mapped_column(String(12), primary_key=True, default=_new_user_id)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    experiments: Mapped[list["Experiment"]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan"
+    )
+    demos: Mapped[list["Demo"]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan"
+    )
+
+
 class Experiment(Base):
     __tablename__ = "experiment"
 
@@ -29,7 +50,11 @@ class Experiment(Base):
     status: Mapped[str] = mapped_column(
         String(16), default="pending"
     )  # pending|running|done|failed|cancelled
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("user.id"), default=None
+    )
 
+    owner: Mapped["User"] = relationship(back_populates="experiments")
     runs: Mapped[list["Run"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"
     )
@@ -67,3 +92,8 @@ class Demo(Base):
     n_steps: Mapped[int] = mapped_column(default=0)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("user.id"), default=None
+    )
+
+    owner: Mapped["User"] = relationship(back_populates="demos")

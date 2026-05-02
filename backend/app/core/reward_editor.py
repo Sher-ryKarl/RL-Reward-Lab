@@ -81,11 +81,11 @@ def _save_persisted() -> None:
     _PERSIST_PATH.write_text(json.dumps(_custom_rewards, ensure_ascii=False), "utf-8")
 
 
-def register(code: str, name: str = "") -> str:
+def register(code: str, name: str = "", user_id: str = "") -> str:
     """Validate and register a custom reward function. Returns reward_id."""
     validate(code)
     rid = _hash(code)
-    _custom_rewards[rid] = {"code": code, "name": name or f"custom_{rid[:6]}"}
+    _custom_rewards[rid] = {"code": code, "name": name or f"custom_{rid[:6]}", "user_id": user_id}
     _save_persisted()
     return rid
 
@@ -94,12 +94,18 @@ def get(rid: str) -> dict | None:
     return _custom_rewards.get(rid)
 
 
-def list_custom() -> list[dict]:
-    return [{"reward_id": rid, **info} for rid, info in _custom_rewards.items()]
+def list_custom(user_id: str = "") -> list[dict]:
+    all_entries = [{"reward_id": rid, **info} for rid, info in _custom_rewards.items()]
+    if user_id:
+        return [e for e in all_entries if e.get("user_id") == user_id]
+    return all_entries
 
 
-def remove(rid: str) -> bool:
+def remove(rid: str, user_id: str = "") -> bool:
     if rid in _custom_rewards:
+        entry = _custom_rewards[rid]
+        if user_id and entry.get("user_id") and entry["user_id"] != user_id:
+            return False
         del _custom_rewards[rid]
         _save_persisted()
         return True

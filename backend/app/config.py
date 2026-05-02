@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # Auth
     secret_key: str = "rl-lab-dev-secret-change-in-production"
-    admin_password: str = "admin"
+    admin_password: str = "admin123"
 
     # Rate limit
     rate_limit: str = "30/minute"

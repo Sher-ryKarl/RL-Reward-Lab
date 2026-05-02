@@ -45,6 +45,7 @@ class DemoSummary(BaseModel):
     n_episodes: int
     n_steps: int
     created_at: datetime
+    user_id: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -145,6 +146,7 @@ class ExperimentSummary(BaseModel):
     total_steps: int
     status: str
     created_at: datetime
+    user_id: str | None = None
     runs: list[RunSummary] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

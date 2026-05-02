@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.db.models import Demo
+from app.db.models import Demo, User
 from app.schemas.api import DemoCreate, DemoSummary
 from app.workers.collect_demo import collect_demo
 
@@ -18,13 +18,18 @@ router = APIRouter(prefix="/api/v1/demos", tags=["demos"])
 
 
 @router.get("", response_model=list[DemoSummary])
-async def list_demos(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Demo).order_by(Demo.created_at.desc()))
+async def list_demos(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Demo).where(Demo.user_id == _user.id).order_by(Demo.created_at.desc())
+    )
     return [DemoSummary.model_validate(d) for d in result.scalars().all()]
 
 
 @router.post("", status_code=202, response_model=DemoSummary)
-async def create_demo(body: DemoCreate, db: AsyncSession = Depends(get_db), _user: str = Depends(get_current_user)):
+async def create_demo(body: DemoCreate, db: AsyncSession = Depends(get_db), _user: User = Depends(get_current_user)):
     if not body.source_run_id:
         raise HTTPException(400, "source_run_id is required to collect a demo")
 
@@ -52,6 +57,7 @@ async def create_demo(body: DemoCreate, db: AsyncSession = Depends(get_db), _use
         n_episodes=0,
         n_steps=0,
         file_path="",
+        user_id=_user.id,
     )
     db.add(demo)
     await db.commit()
@@ -82,8 +88,14 @@ async def create_demo(body: DemoCreate, db: AsyncSession = Depends(get_db), _use
 
 
 @router.get("/{demo_id}", response_model=DemoSummary)
-async def get_demo(demo_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Demo).where(Demo.id == demo_id))
+async def get_demo(
+    demo_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Demo).where(Demo.id == demo_id, Demo.user_id == _user.id)
+    )
     demo = result.scalar_one_or_none()
     if not demo:
         raise HTTPException(404, "Demo not found")
@@ -91,8 +103,10 @@ async def get_demo(demo_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{demo_id}", status_code=204)
-async def delete_demo(demo_id: str, db: AsyncSession = Depends(get_db), _user: str = Depends(get_current_user)):
-    result = await db.execute(select(Demo).where(Demo.id == demo_id))
+async def delete_demo(demo_id: str, db: AsyncSession = Depends(get_db), _user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(Demo).where(Demo.id == demo_id, Demo.user_id == _user.id)
+    )
     demo = result.scalar_one_or_none()
     if not demo:
         raise HTTPException(404, "Demo not found")

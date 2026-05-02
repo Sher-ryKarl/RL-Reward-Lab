@@ -269,6 +269,22 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) }
     ),
 
+  // Auth (v1.3)
+  login: (body: { username: string; password: string }) =>
+    request<{ access_token: string; token_type: string; user: { id: string; username: string } }>(
+      "/api/v1/auth/login",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+
+  register: (body: { username: string; password: string }) =>
+    request<{ access_token: string; token_type: string; user: { id: string; username: string } }>(
+      "/api/v1/auth/register",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
+
+  me: () =>
+    request<{ user: { id: string; username: string } }>("/api/v1/auth/me"),
+
   // SSE stream — handled separately in stream.ts
   streamUrl: (runId: string) => `/api/v1/runs/${runId}/stream`,
 

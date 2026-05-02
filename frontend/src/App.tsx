@@ -7,6 +7,7 @@ import { ExperimentDetailPage } from "./pages/ExperimentDetailPage";
 import { DemoListPage } from "./pages/DemoListPage";
 import { CompareView } from "./components/CompareView/CompareView";
 import { LoginPage } from "./pages/LoginPage";
+import { RegisterPage } from "./pages/RegisterPage";
 import { useAuthStore } from "./stores/authStore";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route
             element={
               <ProtectedRoute>

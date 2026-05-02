@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db
 from app.core.registry import algo_supports_env
-from app.db.models import Experiment, Run as RunModel
+from app.db.models import Experiment, Run as RunModel, User
 from app.schemas.api import (
     ALLOWED_OPS,
     ALLOWED_OBJECTIVES,
@@ -37,7 +37,7 @@ async def create_experiment(
     body: ExperimentCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: User = Depends(get_current_user),
 ):
     if not algo_supports_env(body.algo_id, body.env_id):
         from app.core.registry import ENV_REGISTRY
@@ -72,6 +72,7 @@ async def create_experiment(
         algo_id=body.algo_id,
         total_steps=body.total_steps,
         status="pending",
+        user_id=_user.id,
     )
     db.add(exp)
     await db.flush()
@@ -125,8 +126,9 @@ async def list_experiments(
     algo_id: str | None = None,
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
 ):
-    stmt = select(Experiment)
+    stmt = select(Experiment).where(Experiment.user_id == _user.id)
 
     if status:
         stmt = stmt.where(Experiment.status == status)
@@ -156,11 +158,15 @@ async def list_experiments(
 
 
 @router.get("/{exp_id}", response_model=ExperimentSummary)
-async def get_experiment(exp_id: str, db: AsyncSession = Depends(get_db)):
+async def get_experiment(
+    exp_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
     q = (
         select(Experiment)
         .options(selectinload(Experiment.runs))
-        .where(Experiment.id == exp_id)
+        .where(Experiment.id == exp_id, Experiment.user_id == _user.id)
     )
     result = await db.execute(q)
     exp = result.scalar_one_or_none()
@@ -170,11 +176,15 @@ async def get_experiment(exp_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{exp_id}/optimization", response_model=OptimizationResult)
-async def get_optimization(exp_id: str, db: AsyncSession = Depends(get_db)):
+async def get_optimization(
+    exp_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
     q = (
         select(Experiment)
         .options(selectinload(Experiment.runs))
-        .where(Experiment.id == exp_id)
+        .where(Experiment.id == exp_id, Experiment.user_id == _user.id)
     )
     result = await db.execute(q)
     exp = result.scalar_one_or_none()
@@ -261,13 +271,14 @@ async def recommend_pareto(
     exp_id: str,
     body: ParetoRecommendRequest,
     db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
 ):
     """Given user weights and constraints, return the best trial on the Pareto front."""
     # Fetch experiment with runs
     q = (
         select(Experiment)
         .options(selectinload(Experiment.runs))
-        .where(Experiment.id == exp_id)
+        .where(Experiment.id == exp_id, Experiment.user_id == _user.id)
     )
     result = await db.execute(q)
     exp = result.scalar_one_or_none()
@@ -422,6 +433,7 @@ def _exp_to_summary(e: Experiment) -> ExperimentSummary:
         total_steps=e.total_steps,
         status=e.status,
         created_at=e.created_at,
+        user_id=e.user_id,
         runs=[_run_to_summary(r) for r in e.runs],
     )
 
